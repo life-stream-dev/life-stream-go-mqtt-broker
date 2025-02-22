@@ -1,0 +1,21 @@
+version: '3'
+
+tasks:
+  build:
+    desc: 编译项目
+    cmds:
+      - go build -o bin/mqtt-broker{{exeExt}} ./cmd/mqtt-broker
+
+  test:
+    desc: 运行测试
+    cmds:
+      - go test -v ./...
+
+  run:
+    desc: 运行程序
+    cmds:
+      - task: build
+      - ./bin/mqtt-broker{{exeExt}}
+
+vars:
+  exeExt: "{{if eq .GOOS `windows`}}.exe{{end}}"
