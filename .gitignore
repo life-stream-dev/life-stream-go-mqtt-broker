@@ -1,2 +1,6 @@
+# 排除idea配置目录
 .idea/
+# 排除编译输出目录
 bin/
+# 排除本地配置文件
+config.json
