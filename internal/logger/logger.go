@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"github.com/fatih/color"
+	c "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/config"
 	"io"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
+)
+
+const (
+	LevelFatal slog.Level = 12
 )
 
 type AsyncHandler struct {
@@ -35,15 +38,6 @@ func NewAsyncHandler(basePath string, logLevel slog.Level) *AsyncHandler {
 	_ = h.rotateIfNeeded()
 	h.wg.Add(1)
 	go h.startWorker()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		_ = h.Close()
-		os.Exit(0)
-	}()
-
 	return h
 }
 
@@ -124,6 +118,8 @@ func (h *AsyncHandler) Handle(_ context.Context, r slog.Record) error {
 		level = color.YellowString(level)
 	case slog.LevelError:
 		level = color.RedString(level)
+	case LevelFatal:
+		level = color.HiRedString("FATAL")
 	}
 
 	// 基础格式：时间 | 级别 | 消息
@@ -191,25 +187,64 @@ func (h *AsyncHandler) Close() error {
 	return nil
 }
 
-func Init() {
-	handler := NewAsyncHandler("logs", slog.LevelDebug)
+type ShutdownCallback struct {
+	handler *AsyncHandler
+}
+
+func (lc *ShutdownCallback) Invoke(ctx context.Context) error {
+	return lc.handler.Close()
+}
+
+func Init() *ShutdownCallback {
+	var handler *AsyncHandler
+	config, _ := c.GetConfig()
+	if config.DebugMode {
+		handler = NewAsyncHandler("logs", slog.LevelDebug)
+	} else {
+		handler = NewAsyncHandler("logs", slog.LevelInfo)
+	}
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	slog.Debug("Logger initialized")
+	return &ShutdownCallback{handler: handler}
 }
 
 func Debug(msg string, v ...interface{}) {
+	slog.Debug(msg, v...)
+}
+
+func DebugF(msg string, v ...interface{}) {
 	slog.Debug(fmt.Sprintf(msg, v...))
 }
 
 func Info(msg string, v ...interface{}) {
+	slog.Info(msg, v...)
+}
+
+func InfoF(msg string, v ...interface{}) {
 	slog.Info(fmt.Sprintf(msg, v...))
 }
 
 func Warn(msg string, v ...interface{}) {
+	slog.Warn(msg, v...)
+}
+
+func WarnF(msg string, v ...interface{}) {
 	slog.Warn(fmt.Sprintf(msg, v...))
 }
 
 func Error(msg string, v ...interface{}) {
+	slog.Error(msg, v...)
+}
+
+func ErrorF(msg string, v ...interface{}) {
 	slog.Error(fmt.Sprintf(msg, v...))
+}
+
+func Fatal(msg string, v ...interface{}) {
+	slog.Log(context.Background(), LevelFatal, msg, v...)
+}
+
+func FatalF(msg string, v ...interface{}) {
+	slog.Log(context.Background(), LevelFatal, fmt.Sprintf(msg, v...))
 }
