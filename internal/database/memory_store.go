@@ -6,8 +6,13 @@ type MemorySessionStore struct {
 	sessions map[string]*SessionData
 }
 
+var MemoryStore *MemorySessionStore
+
 func NewMemorySessionStore() *MemorySessionStore {
-	return &MemorySessionStore{sessions: make(map[string]*SessionData)}
+	if MemoryStore == nil {
+		MemoryStore = &MemorySessionStore{sessions: make(map[string]*SessionData)}
+	}
+	return MemoryStore
 }
 
 func (mss *MemorySessionStore) Get(clientID string) (*SessionData, error) {

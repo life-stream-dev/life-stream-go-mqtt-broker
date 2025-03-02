@@ -4,6 +4,10 @@ import "testing"
 
 func TestPacketID(t *testing.T) {
 	mgr := NewPacketIDManager()
+	mgr2 := NewPacketIDManager()
+	if mgr != mgr2 {
+		t.Fatal("manager does not match")
+	}
 
 	// 测试分配
 	id1 := mgr.NextID()

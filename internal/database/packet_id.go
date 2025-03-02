@@ -8,11 +8,16 @@ type PacketIDManager struct {
 	released  map[uint16]struct{}
 }
 
+var PacketManager *PacketIDManager
+
 func NewPacketIDManager() *PacketIDManager {
-	return &PacketIDManager{
-		currentID: 1, // 起始值为1
-		released:  make(map[uint16]struct{}),
+	if PacketManager == nil {
+		PacketManager = &PacketIDManager{
+			currentID: 1, // 起始值为1
+			released:  make(map[uint16]struct{}),
+		}
 	}
+	return PacketManager
 }
 
 // NextID 获取下一个可用ID
