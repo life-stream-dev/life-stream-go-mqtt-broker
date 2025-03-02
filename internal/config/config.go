@@ -8,12 +8,22 @@ import (
 
 type Config struct {
 	Database struct {
-		Host     string `json:"host"`
-		Port     int    `json:"port"`
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Host               string `json:"host"`
+		Port               uint64 `json:"port"`
+		Username           string `json:"username"`
+		Password           string `json:"password"`
+		Database           string `json:"database"`
+		UseTLS             bool   `json:"use_tls"`
+		ConnectTimeout     string `json:"connect_timeout"`
+		SocketTimeout      string `json:"socket_timeout"`
+		ConnectIdleTimeout string `json:"connect_idle_timeout"`
+		OperationTimeout   string `json:"operation_timeout"`
+		Heartbeat          string `json:"heartbeat"`
+		MinPoolSize        uint64 `json:"min_pool_size"`
+		MaxPoolSize        uint64 `json:"max_pool_size"`
 	} `json:"database"`
-	DebugMode bool `json:"debug_mode"`
+	DebugMode bool   `json:"debug_mode"`
+	AppName   string `json:"app_name"`
 }
 
 var config Config
