@@ -48,7 +48,7 @@ func (c *Cleaner) Init(loggerShutdown Callable) {
 		go func() {
 			<-ctx.Done()
 			stop()
-			logger.Debug("Received interrupt signal, shutting down")
+			logger.Info("Received interrupt signal, shutting down")
 
 			c.mu.Lock()
 			c.cleaning = true // 标记为清理中，阻止后续Add操作
@@ -79,7 +79,7 @@ func (c *Cleaner) Init(loggerShutdown Callable) {
 			} else {
 				logger.Debug("All cleaners executed successfully")
 			}
-			logger.Debug("Cleanup finished, server offline")
+			logger.Info("Cleanup finished, server offline")
 
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()

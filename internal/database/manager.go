@@ -10,7 +10,7 @@ type SessionData struct {
 
 type SessionStore interface {
 	Get(clientID string) (*SessionData, error)
-	Save(clientID string, session *SessionData) error
+	Save(session *SessionData) error
 	Delete(clientID string) error
 }
 

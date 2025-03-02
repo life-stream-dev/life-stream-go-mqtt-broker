@@ -23,11 +23,8 @@ func (mss *MemorySessionStore) Get(clientID string) (*SessionData, error) {
 	return session, nil
 }
 
-func (mss *MemorySessionStore) Save(clientID string, session *SessionData) error {
-	if clientID != session.ClientID {
-		return errors.New("clientID does not match")
-	}
-	mss.sessions[clientID] = session
+func (mss *MemorySessionStore) Save(session *SessionData) error {
+	mss.sessions[session.ClientID] = session
 	return nil
 }
 

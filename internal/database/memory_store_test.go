@@ -9,9 +9,9 @@ func TestMemorySessionStore(t *testing.T) {
 		t.Fatal("memory session store does not match")
 	}
 
-	store.Save("1", NewSessionData("1"))
-	store.Save("2", NewSessionData("2"))
-	store.Save("3", NewSessionData("3"))
+	store.Save(NewSessionData("1"))
+	store.Save(NewSessionData("2"))
+	store.Save(NewSessionData("3"))
 
 	_, err := store.Get("2")
 	if err != nil {
