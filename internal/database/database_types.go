@@ -20,9 +20,10 @@ type Topic struct {
 
 type WillMessage struct {
 	ClientID string `bson:"client_id"`
-	Topic    string `bson:"topic"`
+	Topic    []byte `bson:"topic"`
 	QoS      byte   `bson:"qo_s"`
 	Content  []byte `bson:"content"`
+	Retained bool   `bson:"retained"`
 }
 
 type SessionStore interface {
@@ -41,8 +42,14 @@ func NewTopic() *Topic {
 	return &Topic{}
 }
 
-func NewWillMessage() *WillMessage {
-	return &WillMessage{}
+func NewWillMessage(clientID string, topic []byte, content []byte, qos byte, retained bool) *WillMessage {
+	return &WillMessage{
+		ClientID: clientID,
+		Topic:    topic,
+		QoS:      qos,
+		Content:  content,
+		Retained: retained,
+	}
 }
 
 func NewSessionData(clientID string) *SessionData {

@@ -20,6 +20,27 @@ const (
 	DISCONNECT
 )
 
+var PacketTypeMap = map[PacketType]string{
+	CONNECT:     "CONNECT",
+	CONNACK:     "CONNACK",
+	PUBLISH:     "PUBLISH",
+	PUBACK:      "PUBACK",
+	PUBREC:      "PUBREC",
+	PUBREL:      "PUBREL",
+	PUBCOMP:     "PUBCOMP",
+	SUBSCRIBE:   "SUBSCRIBE",
+	SUBACK:      "SUBACK",
+	UNSUBSCRIBE: "UNSUBSCRIBE",
+	UNSUBACK:    "UNSUBACK",
+	PINGREQ:     "PINGREQ",
+	PINGRESP:    "PINGRESP",
+	DISCONNECT:  "DISCONNECT",
+}
+
+func (packetType PacketType) String() string {
+	return PacketTypeMap[packetType]
+}
+
 var allowedFlags = map[PacketType]byte{
 	CONNECT:     0x00, // 0000
 	CONNACK:     0x00, // 0000

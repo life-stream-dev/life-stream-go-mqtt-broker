@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 )
@@ -54,11 +55,17 @@ func ReadPacket(conn net.Conn) (*FixedHeader, []byte, error) {
 		return nil, nil, err
 	}
 
-	return &FixedHeader{
+	header := &FixedHeader{
 		Type:            PacketType(typeAndFlags[0] >> 4),
 		Flags:           typeAndFlags[0] & 0x0F,
 		RemainingLength: remaining,
-	}, payload, nil
+	}
+
+	if !ValidateFlags(header.Type, header.Flags) {
+		return nil, nil, fmt.Errorf("flags %d of %s packet is not valid", header.Flags, header.Type.String())
+	}
+
+	return header, payload, nil
 }
 
 func DecodeRemainingLength(r io.Reader) (int, error) {
@@ -75,7 +82,7 @@ func DecodeRemainingLength(r io.Reader) (int, error) {
 			return value, nil
 		}
 	}
-	return 0, errors.New("剩余长度超过4字节限制")
+	return 0, errors.New("the remaining length exceeds the 4 byte limit")
 }
 
 func EncodeRemainingLength(x int) []byte {
@@ -88,5 +95,5 @@ func EncodeRemainingLength(x int) []byte {
 		}
 		i++
 	}
-	return buf[:i] // 返回实际使用的字节
+	return buf[:i]
 }

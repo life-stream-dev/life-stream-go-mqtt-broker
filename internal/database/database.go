@@ -5,8 +5,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	c "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/config"
+	event2 "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/event"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
-	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/server"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/utils"
 	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -98,5 +98,5 @@ func ConnectDatabase() {
 
 	Database = Client.Database(config.Database.Database)
 
-	server.NewCleaner().Add(NewDBCloseCallback())
+	event2.NewCleaner().Add(NewDBCloseCallback())
 }

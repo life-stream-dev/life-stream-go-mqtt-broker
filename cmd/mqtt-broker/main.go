@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/config"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
+	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/event"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/server"
 )
@@ -15,7 +16,7 @@ func main() {
 	}
 	loggerCallback := logger.Init()
 	logger.Debug("Application initializing...")
-	cleaner := server.NewCleaner()
+	cleaner := event.NewCleaner()
 	cleaner.Init(loggerCallback)
 	database.ConnectDatabase()
 	server.StartServer(1883)

@@ -5,8 +5,19 @@ package packet
 import (
 	"errors"
 	. "fmt"
-	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
+	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
+)
+
+type ConnectRespType byte
+
+const (
+	Accepted ConnectRespType = iota
+	UnacceptableProtocol
+	IdentifierRejected
+	ServerUnavailable
+	AuthenticationFailed
+	NotAuthorized
 )
 
 // ConnectPacketFlag CONNECT控制包连接标志位
@@ -31,6 +42,7 @@ type ConnectPacketPayloads struct {
 	PasswordPayload    ConnectPacketPayload
 	WillMessageTopic   ConnectPacketPayload
 	WillMessageContent ConnectPacketPayload
+	KeepAlive          int
 }
 
 func readConnectPacketPayload(payload []byte, startByte int) (ConnectPacketPayload, error) {
@@ -49,38 +61,40 @@ func readConnectPacketPayload(payload []byte, startByte int) (ConnectPacketPaylo
 	}, nil
 }
 
-// HandlerConnectPacket 处理 CONNECT 控制包的可变头和负载
-func HandlerConnectPacket(payload []byte) (ConnectPacketPayloads, error) {
+func NewConnectAckPacket(sessionStatus bool, returnCode ConnectRespType) []byte {
+	if sessionStatus {
+		return []byte{0x20, 0x02, 0x01, byte(returnCode)}
+	}
+	return []byte{0x20, 0x02, 0x00, byte(returnCode)}
+}
+
+// HandleConnectPacket 处理 CONNECT 控制包的可变头和负载
+func HandleConnectPacket(payload []byte) (ConnectPacketPayloads, []byte, error) {
 	result := ConnectPacketPayloads{}
 	currentPtr := 0
 
-	// 协议名长度检查
-	if currentPtr+2 > len(payload) {
-		return result, errors.New("insufficient bytes for protocol length")
+	protocolString, err := readConnectPacketPayload(payload, currentPtr)
+	if err != nil {
+		return result, nil, errors.New("unable to check protocol string")
 	}
-	protocolLength := int(mqtt.ByteToUInt16(payload[currentPtr : currentPtr+2]))
-	currentPtr += 2
-	logger.Debug("协议字段长度：%d", protocolLength)
-
-	// 协议名检查
-	if currentPtr+protocolLength > len(payload) {
-		return result, errors.New("protocol name exceeds payload")
+	if string(protocolString.Payload) != "MQTT" {
+		return result, nil, Errorf("incorrect Protocol String: %s", string(protocolString.Payload))
 	}
-	protocolString := string(payload[currentPtr : currentPtr+protocolLength])
-	currentPtr += protocolLength
-	logger.Debug("协议：%s", protocolString)
+	currentPtr += 2 + protocolString.PayloadLength
 
 	// 协议版本
 	if currentPtr >= len(payload) {
-		return result, errors.New("insufficient bytes for protocol version")
+		return result, nil, errors.New("insufficient bytes for protocol version")
 	}
 	protocolVersion := int(payload[currentPtr])
 	currentPtr++
-	logger.Debug("协议版本：%d", protocolVersion)
+	if protocolVersion != 0x04 {
+		return result, NewConnectAckPacket(false, UnacceptableProtocol), errors.New("protocol version does not match")
+	}
 
 	// 连接标志位
 	if currentPtr >= len(payload) {
-		return result, errors.New("insufficient bytes for connect flags")
+		return result, nil, errors.New("insufficient bytes for connect flags")
 	}
 	connectFlag := payload[currentPtr]
 	currentPtr++
@@ -95,12 +109,19 @@ func HandlerConnectPacket(payload []byte) (ConnectPacketPayloads, error) {
 		CleanSession:    (connectFlag&0x02)>>1 == 1,
 	}
 
-	logger.Debug("连接标志位：%+v", result.ConnectFlag)
+	if !result.ConnectFlag.WillMessageFlag && (result.ConnectFlag.RemainFlag || result.ConnectFlag.QoSLevel != 0) {
+		return result, nil, errors.New("when will message flag is not set, remain flag must not be set and QoSLevel must be 0")
+	}
+
+	// Keep Alive Time
+	keepAlive := int(mqtt.ByteToUInt16(payload[currentPtr : currentPtr+2]))
+	result.KeepAlive = keepAlive
+	currentPtr += 2
 
 	// Client ID
 	clientID, err := readConnectPacketPayload(payload, currentPtr)
 	if err != nil {
-		return result, Errorf("client ID: %w", err)
+		return result, nil, Errorf("client ID: %w", err)
 	}
 	result.ClientIdentifier = clientID
 	currentPtr += 2 + clientID.PayloadLength
@@ -109,14 +130,14 @@ func HandlerConnectPacket(payload []byte) (ConnectPacketPayloads, error) {
 	if result.ConnectFlag.WillMessageFlag {
 		willTopic, err := readConnectPacketPayload(payload, currentPtr)
 		if err != nil {
-			return result, Errorf("will topic: %w", err)
+			return result, nil, Errorf("will topic: %w", err)
 		}
 		result.WillMessageTopic = willTopic
 		currentPtr += 2 + willTopic.PayloadLength
 
 		willContent, err := readConnectPacketPayload(payload, currentPtr)
 		if err != nil {
-			return result, Errorf("will content: %w", err)
+			return result, nil, Errorf("will content: %w", err)
 		}
 		result.WillMessageContent = willContent
 		currentPtr += 2 + willContent.PayloadLength
@@ -126,7 +147,7 @@ func HandlerConnectPacket(payload []byte) (ConnectPacketPayloads, error) {
 	if result.ConnectFlag.UsernameFlag {
 		username, err := readConnectPacketPayload(payload, currentPtr)
 		if err != nil {
-			return result, Errorf("username: %w", err)
+			return result, nil, Errorf("username: %w", err)
 		}
 		result.UsernamePayload = username
 		currentPtr += 2 + username.PayloadLength
@@ -136,11 +157,44 @@ func HandlerConnectPacket(payload []byte) (ConnectPacketPayloads, error) {
 	if result.ConnectFlag.PasswordFlag {
 		password, err := readConnectPacketPayload(payload, currentPtr)
 		if err != nil {
-			return result, Errorf("password: %w", err)
+			return result, nil, Errorf("password: %w", err)
 		}
 		result.PasswordPayload = password
 		currentPtr += 2 + password.PayloadLength
 	}
 
-	return result, nil
+	if result.ConnectFlag.CleanSession {
+		clientID := string(result.ClientIdentifier.Payload)
+		err := database.NewDatabaseStore().DeleteSession(clientID)
+		if err != nil {
+			return result, nil, errors.New("unable to delete session")
+		}
+		session := database.NewSessionData(clientID)
+		err = database.NewMemoryStore().SaveSession(session)
+		if err != nil {
+			return result, nil, errors.New("unable to save session")
+		}
+		if result.ConnectFlag.WillMessageFlag {
+			willMessage := database.NewWillMessage(
+				clientID,
+				result.WillMessageTopic.Payload,
+				result.WillMessageContent.Payload,
+				result.ConnectFlag.QoSLevel,
+				result.ConnectFlag.RemainFlag,
+			)
+			err := database.NewMemoryStore().SaveWillMessage(willMessage)
+			if err != nil {
+				return result, nil, errors.New("unable to save will message")
+			}
+		}
+	} else {
+		clientID := string(result.ClientIdentifier.Payload)
+		_, err := database.NewDatabaseStore().GetSession(clientID)
+		if err != nil {
+			return result, nil, errors.New("unable to get session")
+		}
+
+	}
+
+	return result, NewConnectAckPacket(false, Accepted), nil
 }
