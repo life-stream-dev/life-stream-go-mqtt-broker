@@ -2,33 +2,52 @@ package database
 
 import "errors"
 
-type MemorySessionStore struct {
-	sessions map[string]*SessionData
+type MemoryStore struct {
+	sessions     map[string]*SessionData
+	willMessages map[string]*WillMessage
 }
 
-var MemoryStore *MemorySessionStore
+var Store *MemoryStore
 
-func NewMemorySessionStore() *MemorySessionStore {
-	if MemoryStore == nil {
-		MemoryStore = &MemorySessionStore{sessions: make(map[string]*SessionData)}
+func NewMemoryStore() *MemoryStore {
+	if Store == nil {
+		Store = &MemoryStore{sessions: make(map[string]*SessionData)}
 	}
-	return MemoryStore
+	return Store
 }
 
-func (mss *MemorySessionStore) Get(clientID string) (*SessionData, error) {
-	session, err := mss.sessions[clientID]
+func (ms *MemoryStore) GetSession(clientID string) (*SessionData, error) {
+	session, err := ms.sessions[clientID]
 	if !err {
 		return nil, errors.New("session not found")
 	}
 	return session, nil
 }
 
-func (mss *MemorySessionStore) Save(session *SessionData) error {
-	mss.sessions[session.ClientID] = session
+func (ms *MemoryStore) SaveSession(session *SessionData) error {
+	ms.sessions[session.ClientID] = session
 	return nil
 }
 
-func (mss *MemorySessionStore) Delete(clientID string) error {
-	delete(mss.sessions, clientID)
+func (ms *MemoryStore) DeleteSession(clientID string) error {
+	delete(ms.sessions, clientID)
+	return nil
+}
+
+func (ms *MemoryStore) GetWillMessage(clientID string) (*WillMessage, error) {
+	message, err := ms.willMessages[clientID]
+	if !err {
+		return nil, errors.New("message not found")
+	}
+	return message, nil
+}
+
+func (ms *MemoryStore) SaveWillMessage(willMessage *WillMessage) error {
+	ms.willMessages[willMessage.ClientID] = willMessage
+	return nil
+}
+
+func (ms *MemoryStore) DeleteWillMessage(clientID string) error {
+	delete(ms.willMessages, clientID)
 	return nil
 }
