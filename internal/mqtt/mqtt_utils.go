@@ -7,12 +7,6 @@ import (
 	"net"
 )
 
-type FixedHeader struct {
-	Type            PacketType
-	Flags           byte
-	RemainingLength int
-}
-
 func ByteToUInt16(bytes []byte) uint16 {
 	if len(bytes) == 0 {
 		return 0
@@ -36,23 +30,23 @@ func ReadByte(r io.Reader) (byte, error) {
 	return ReadBytes(r, 1)
 }
 
-func ReadPacket(conn net.Conn) (*FixedHeader, []byte, error) {
+func ReadPacket(conn net.Conn) (*Packet, error) {
 	// 读取固定头
 	typeAndFlags := make([]byte, 1)
 	if _, err := io.ReadFull(conn, typeAndFlags); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// 解析剩余长度
 	remaining, err := DecodeRemainingLength(conn)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// 读取可变头+有效载荷
 	payload := make([]byte, remaining)
 	if _, err := io.ReadFull(conn, payload); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	header := &FixedHeader{
@@ -62,10 +56,17 @@ func ReadPacket(conn net.Conn) (*FixedHeader, []byte, error) {
 	}
 
 	if !ValidateFlags(header.Type, header.Flags) {
-		return nil, nil, fmt.Errorf("flags %d of %s packet is not valid", header.Flags, header.Type.String())
+		return nil, fmt.Errorf("flags %d of %s packet is not valid", header.Flags, header.Type.String())
 	}
 
-	return header, payload, nil
+	return &Packet{
+		Header: header,
+		Payload: &Payload{
+			Context:    payload,
+			ContextLen: len(payload),
+			CurrentPtr: 0,
+		},
+	}, nil
 }
 
 func DecodeRemainingLength(r io.Reader) (int, error) {
@@ -96,4 +97,14 @@ func EncodeRemainingLength(x int) []byte {
 		i++
 	}
 	return buf[:i]
+}
+
+func ValidateFlags(pt PacketType, flags byte) bool {
+	allowed := allowedFlags[pt]
+	// 检查标志位是否在允许范围内
+	return (flags & ^allowed) == 0
+}
+
+func (p *Payload) CheckRemainingLength() bool {
+	return p.CurrentPtr < p.ContextLen
 }

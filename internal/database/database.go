@@ -33,12 +33,11 @@ func (dc *DBCloseCallback) Invoke(ctx context.Context) error {
 	return Client.Disconnect(ctx)
 }
 
-func ConnectDatabase() {
+func ConnectDatabase() error {
 	logger.DebugF("Connecting to database...")
 	config, err := c.GetConfig()
 	if err != nil {
-		logger.ErrorF("Error occured while connecting to database: %v", err)
-		return
+		return fmt.Errorf("error occured while connecting to database: %v", err)
 	}
 
 	OperationTimeout = utils.ParseStringTime(config.Database.OperationTimeout)
@@ -87,16 +86,17 @@ func ConnectDatabase() {
 
 	Client, err = mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		logger.FatalF("Error occured while connecting to database: %v", err)
+		return fmt.Errorf("error occured while connecting to database: %v", err)
 	}
 
 	// 验证连接
 	if err = Client.Ping(ctx, nil); err != nil {
 		_ = Client.Disconnect(ctx)
-		logger.FatalF("Error occured while pinging database: %v", err)
+		return fmt.Errorf("error occured while pinging database: %v", err)
 	}
 
 	Database = Client.Database(config.Database.Database)
 
 	event2.NewCleaner().Add(NewDBCloseCallback())
+	return nil
 }

@@ -58,8 +58,19 @@ var allowedFlags = map[PacketType]byte{
 	DISCONNECT:  0x00, // 0000
 }
 
-func ValidateFlags(pt PacketType, flags byte) bool {
-	allowed := allowedFlags[pt]
-	// 检查标志位是否在允许范围内
-	return (flags & ^allowed) == 0
+type FixedHeader struct {
+	Type            PacketType
+	Flags           byte
+	RemainingLength int
+}
+
+type Payload struct {
+	Context    []byte
+	ContextLen int
+	CurrentPtr int
+}
+
+type Packet struct {
+	Header  *FixedHeader
+	Payload *Payload
 }

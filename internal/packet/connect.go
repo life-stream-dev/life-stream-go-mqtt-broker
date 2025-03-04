@@ -4,7 +4,7 @@ package packet
 
 import (
 	"errors"
-	. "fmt"
+	"fmt"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
 )
@@ -30,35 +30,14 @@ type ConnectPacketFlag struct {
 	CleanSession    bool
 }
 
-type ConnectPacketPayload struct {
-	PayloadLength int
-	Payload       []byte
-}
-
 type ConnectPacketPayloads struct {
 	ConnectFlag        ConnectPacketFlag
-	ClientIdentifier   ConnectPacketPayload
-	UsernamePayload    ConnectPacketPayload
-	PasswordPayload    ConnectPacketPayload
-	WillMessageTopic   ConnectPacketPayload
-	WillMessageContent ConnectPacketPayload
+	ClientIdentifier   FieldPayload
+	UsernamePayload    FieldPayload
+	PasswordPayload    FieldPayload
+	WillMessageTopic   FieldPayload
+	WillMessageContent FieldPayload
 	KeepAlive          int
-}
-
-func readConnectPacketPayload(payload []byte, startByte int) (ConnectPacketPayload, error) {
-	if startByte+1 >= len(payload) {
-		return ConnectPacketPayload{}, errors.New("insufficient bytes for length")
-	}
-	length := int(mqtt.ByteToUInt16(payload[startByte : startByte+2]))
-	end := startByte + 2 + length
-	if end > len(payload) {
-		return ConnectPacketPayload{}, Errorf("payload length %d exceeds buffer (len=%d)", length, len(payload))
-	}
-
-	return ConnectPacketPayload{
-		PayloadLength: length,
-		Payload:       payload[startByte+2 : end],
-	}, nil
 }
 
 func NewConnectAckPacket(sessionStatus bool, returnCode ConnectRespType) []byte {
@@ -69,35 +48,38 @@ func NewConnectAckPacket(sessionStatus bool, returnCode ConnectRespType) []byte 
 }
 
 // HandleConnectPacket 处理 CONNECT 控制包的可变头和负载
-func HandleConnectPacket(payload []byte) (ConnectPacketPayloads, []byte, error) {
+func HandleConnectPacket(packet *mqtt.Packet) (ConnectPacketPayloads, []byte, error) {
+	payload := packet.Payload
 	result := ConnectPacketPayloads{}
-	currentPtr := 0
 
-	protocolString, err := readConnectPacketPayload(payload, currentPtr)
+	protocolString, err := readPacketPayload(payload)
 	if err != nil {
 		return result, nil, errors.New("unable to check protocol string")
 	}
 	if string(protocolString.Payload) != "MQTT" {
-		return result, nil, Errorf("incorrect Protocol String: %s", string(protocolString.Payload))
+		return result, nil, fmt.Errorf("incorrect Protocol String: %s", string(protocolString.Payload))
 	}
-	currentPtr += 2 + protocolString.PayloadLength
 
 	// 协议版本
-	if currentPtr >= len(payload) {
+	if !payload.CheckRemainingLength() {
 		return result, nil, errors.New("insufficient bytes for protocol version")
 	}
-	protocolVersion := int(payload[currentPtr])
-	currentPtr++
+	protocolVersion, err := readPacketByte(payload)
+	if err != nil {
+		return result, nil, fmt.Errorf("unable to read protocol version, details: %v", err)
+	}
 	if protocolVersion != 0x04 {
 		return result, NewConnectAckPacket(false, UnacceptableProtocol), errors.New("protocol version does not match")
 	}
 
 	// 连接标志位
-	if currentPtr >= len(payload) {
+	if !payload.CheckRemainingLength() {
 		return result, nil, errors.New("insufficient bytes for connect flags")
 	}
-	connectFlag := payload[currentPtr]
-	currentPtr++
+	connectFlag, err := readPacketByte(payload)
+	if err != nil {
+		return result, nil, fmt.Errorf("unable to read connect flag, details: %v", err)
+	}
 
 	// 解析标志位
 	result.ConnectFlag = ConnectPacketFlag{
@@ -114,53 +96,51 @@ func HandleConnectPacket(payload []byte) (ConnectPacketPayloads, []byte, error) 
 	}
 
 	// Keep Alive Time
-	keepAlive := int(mqtt.ByteToUInt16(payload[currentPtr : currentPtr+2]))
+	data, err := readPacketBytes(payload, 2)
+	if err != nil {
+		return result, nil, errors.New("unable to read keep alive time")
+	}
+	keepAlive := int(mqtt.ByteToUInt16(data))
 	result.KeepAlive = keepAlive
-	currentPtr += 2
 
 	// Client ID
-	clientID, err := readConnectPacketPayload(payload, currentPtr)
+	clientID, err := readPacketPayload(payload)
 	if err != nil {
-		return result, nil, Errorf("client ID: %w", err)
+		return result, nil, fmt.Errorf("client ID: %w", err)
 	}
 	result.ClientIdentifier = clientID
-	currentPtr += 2 + clientID.PayloadLength
 
 	// Will Message
 	if result.ConnectFlag.WillMessageFlag {
-		willTopic, err := readConnectPacketPayload(payload, currentPtr)
+		willTopic, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, Errorf("will topic: %w", err)
+			return result, nil, fmt.Errorf("will topic: %w", err)
 		}
 		result.WillMessageTopic = willTopic
-		currentPtr += 2 + willTopic.PayloadLength
 
-		willContent, err := readConnectPacketPayload(payload, currentPtr)
+		willContent, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, Errorf("will content: %w", err)
+			return result, nil, fmt.Errorf("will content: %w", err)
 		}
 		result.WillMessageContent = willContent
-		currentPtr += 2 + willContent.PayloadLength
 	}
 
 	// Username
 	if result.ConnectFlag.UsernameFlag {
-		username, err := readConnectPacketPayload(payload, currentPtr)
+		username, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, Errorf("username: %w", err)
+			return result, nil, fmt.Errorf("username: %w", err)
 		}
 		result.UsernamePayload = username
-		currentPtr += 2 + username.PayloadLength
 	}
 
 	// Password
 	if result.ConnectFlag.PasswordFlag {
-		password, err := readConnectPacketPayload(payload, currentPtr)
+		password, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, Errorf("password: %w", err)
+			return result, nil, fmt.Errorf("password: %w", err)
 		}
 		result.PasswordPayload = password
-		currentPtr += 2 + password.PayloadLength
 	}
 
 	if result.ConnectFlag.CleanSession {

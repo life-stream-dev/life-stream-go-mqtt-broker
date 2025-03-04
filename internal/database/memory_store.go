@@ -11,7 +11,10 @@ var Store *MemoryStore
 
 func NewMemoryStore() *MemoryStore {
 	if Store == nil {
-		Store = &MemoryStore{sessions: make(map[string]*SessionData)}
+		Store = &MemoryStore{
+			sessions:     make(map[string]*SessionData),
+			willMessages: make(map[string]*WillMessage),
+		}
 	}
 	return Store
 }
