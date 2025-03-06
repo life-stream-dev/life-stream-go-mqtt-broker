@@ -19,7 +19,7 @@ func send(conn net.Conn, data []byte, connID string) error {
 		}
 		total += n
 	}
-	logger.DebugF("[%s] Send %d bytes to client", connID, total)
+	logger.DebugF("[%s] Send %d bytes to client, data %v", connID, total, data)
 	return nil
 }
 

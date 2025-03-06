@@ -88,6 +88,25 @@ func (c *ConnectionHandler) handlePacket() {
 				logger.ErrorF("[%s] Fail to handle publish packet, details: %v", c.connId, err)
 				return
 			}
+		case mqtt.SUBSCRIBE:
+			result, err := pa.ParseSubscribePacket(packet)
+			if err != nil {
+				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
+				return
+			}
+			for _, sub := range result.Subscriptions {
+				logger.DebugF("[%s] Subscribe to %s, QoS Level %d", c.connId, sub.TopicName, sub.QoSLevel)
+			}
+			resp, err := pa.HandleSubscribePacket(result)
+			if err != nil {
+				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
+				return
+			}
+			err = send(c.conn, resp, c.connId)
+			if err != nil {
+				logger.ErrorF("[%s] Fail to send subscribe ack packet, details: %v", c.connId, err)
+				return
+			}
 		case mqtt.PINGREQ:
 			handlePingReq(c.conn, c.connId)
 		case mqtt.DISCONNECT:

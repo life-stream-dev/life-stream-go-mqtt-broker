@@ -18,6 +18,11 @@ type Topic struct {
 	TopicName string `bson:"topic_name"`
 }
 
+type Subscription struct {
+	TopicName string `bson:"topic_name"`
+	QoSLevel  byte   `bson:"qos_level"`
+}
+
 type WillMessage struct {
 	ClientID string `bson:"client_id"`
 	Topic    []byte `bson:"topic"`

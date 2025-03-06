@@ -21,7 +21,7 @@ type PublishPacketPayloads struct {
 
 func NewPublishPacket(packetPayloads *PublishPacketPayloads) []byte {
 	packet := make([]byte, 1)
-	packet[0] += 0x03 << 4
+	packet[0] += byte(mqtt.PUBLISH) << 4
 	if packetPayloads.PacketFlag.QoS > 0 {
 		packet[0] += packetPayloads.PacketFlag.QoS << 1
 	}
@@ -66,11 +66,11 @@ func ParsePublishPacket(packet *mqtt.Packet) (*PublishPacketPayloads, error) {
 	payloadLength -= 2 + topicName.PayloadLength
 
 	if result.PacketFlag.QoS > 0 {
-		packetId, err := readPacketPayload(packet.Payload)
+		packetId, err := readPacketBytes(packet.Payload, 2)
 		if err != nil {
 			return result, fmt.Errorf("error occured when reading packet ID, details: %v", err)
 		}
-		result.PacketID = int(binary.BigEndian.Uint16(packetId.Payload))
+		result.PacketID = int(binary.BigEndian.Uint16(packetId))
 		payloadLength -= 2
 	}
 
