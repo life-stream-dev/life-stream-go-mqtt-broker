@@ -3,9 +3,11 @@ package packet
 // 控制包类型 CONNECT 相关函数
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
+	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
 )
 
@@ -41,44 +43,47 @@ type ConnectPacketPayloads struct {
 }
 
 func NewConnectAckPacket(sessionStatus bool, returnCode ConnectRespType) []byte {
-	if sessionStatus {
-		return []byte{0x20, 0x02, 0x01, byte(returnCode)}
+	if returnCode != Accepted {
+		return []byte{0x20, 0x02, 0x00, byte(returnCode)}
 	}
-	return []byte{0x20, 0x02, 0x00, byte(returnCode)}
+	if sessionStatus {
+		return []byte{0x20, 0x02, 0x01, byte(Accepted)}
+	}
+	return []byte{0x20, 0x02, 0x00, byte(Accepted)}
 }
 
-// HandleConnectPacket 处理 CONNECT 控制包的可变头和负载
-func HandleConnectPacket(packet *mqtt.Packet) (ConnectPacketPayloads, []byte, error) {
+// ParseConnectPacket 处理 CONNECT 控制包的可变头和负载
+func ParseConnectPacket(packet *mqtt.Packet) (*ConnectPacketPayloads, []byte, error) {
 	payload := packet.Payload
 	result := ConnectPacketPayloads{}
 
 	protocolString, err := readPacketPayload(payload)
 	if err != nil {
-		return result, nil, errors.New("unable to check protocol string")
+		return &result, nil, errors.New("unable to check protocol string")
 	}
 	if string(protocolString.Payload) != "MQTT" {
-		return result, nil, fmt.Errorf("incorrect Protocol String: %s", string(protocolString.Payload))
+		return &result, nil, fmt.Errorf("incorrect Protocol String: %s", string(protocolString.Payload))
 	}
 
 	// 协议版本
 	if !payload.CheckRemainingLength() {
-		return result, nil, errors.New("insufficient bytes for protocol version")
+		return &result, nil, errors.New("insufficient bytes for protocol version")
 	}
 	protocolVersion, err := readPacketByte(payload)
 	if err != nil {
-		return result, nil, fmt.Errorf("unable to read protocol version, details: %v", err)
+		return &result, nil, fmt.Errorf("unable to read protocol version, details: %v", err)
 	}
 	if protocolVersion != 0x04 {
-		return result, NewConnectAckPacket(false, UnacceptableProtocol), errors.New("protocol version does not match")
+		return &result, NewConnectAckPacket(false, UnacceptableProtocol), errors.New("protocol version does not match")
 	}
 
 	// 连接标志位
 	if !payload.CheckRemainingLength() {
-		return result, nil, errors.New("insufficient bytes for connect flags")
+		return &result, nil, errors.New("insufficient bytes for connect flags")
 	}
 	connectFlag, err := readPacketByte(payload)
 	if err != nil {
-		return result, nil, fmt.Errorf("unable to read connect flag, details: %v", err)
+		return &result, nil, fmt.Errorf("unable to read connect flag, details: %v", err)
 	}
 
 	// 解析标志位
@@ -92,21 +97,24 @@ func HandleConnectPacket(packet *mqtt.Packet) (ConnectPacketPayloads, []byte, er
 	}
 
 	if !result.ConnectFlag.WillMessageFlag && (result.ConnectFlag.RemainFlag || result.ConnectFlag.QoSLevel != 0) {
-		return result, nil, errors.New("when will message flag is not set, remain flag must not be set and QoSLevel must be 0")
+		return &result, nil, errors.New("when will message flag is not set, remain flag must not be set and QoSLevel must be 0")
 	}
 
 	// Keep Alive Time
 	data, err := readPacketBytes(payload, 2)
 	if err != nil {
-		return result, nil, errors.New("unable to read keep alive time")
+		return &result, nil, errors.New("unable to read keep alive time")
 	}
-	keepAlive := int(mqtt.ByteToUInt16(data))
+	keepAlive := int(binary.BigEndian.Uint16(data))
 	result.KeepAlive = keepAlive
 
 	// Client ID
 	clientID, err := readPacketPayload(payload)
 	if err != nil {
-		return result, nil, fmt.Errorf("client ID: %w", err)
+		return &result, nil, fmt.Errorf("client ID: %w", err)
+	}
+	if clientID.PayloadLength == 0 {
+		return &result, NewConnectAckPacket(false, IdentifierRejected), errors.New("client ID is empty")
 	}
 	result.ClientIdentifier = clientID
 
@@ -114,13 +122,13 @@ func HandleConnectPacket(packet *mqtt.Packet) (ConnectPacketPayloads, []byte, er
 	if result.ConnectFlag.WillMessageFlag {
 		willTopic, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, fmt.Errorf("will topic: %w", err)
+			return &result, nil, fmt.Errorf("will topic: %w", err)
 		}
 		result.WillMessageTopic = willTopic
 
 		willContent, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, fmt.Errorf("will content: %w", err)
+			return &result, nil, fmt.Errorf("will content: %w", err)
 		}
 		result.WillMessageContent = willContent
 	}
@@ -129,7 +137,7 @@ func HandleConnectPacket(packet *mqtt.Packet) (ConnectPacketPayloads, []byte, er
 	if result.ConnectFlag.UsernameFlag {
 		username, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, fmt.Errorf("username: %w", err)
+			return &result, nil, fmt.Errorf("username: %w", err)
 		}
 		result.UsernamePayload = username
 	}
@@ -138,43 +146,40 @@ func HandleConnectPacket(packet *mqtt.Packet) (ConnectPacketPayloads, []byte, er
 	if result.ConnectFlag.PasswordFlag {
 		password, err := readPacketPayload(payload)
 		if err != nil {
-			return result, nil, fmt.Errorf("password: %w", err)
+			return &result, nil, fmt.Errorf("password: %w", err)
 		}
 		result.PasswordPayload = password
 	}
 
-	if result.ConnectFlag.CleanSession {
-		clientID := string(result.ClientIdentifier.Payload)
-		err := database.NewDatabaseStore().DeleteSession(clientID)
-		if err != nil {
-			return result, nil, errors.New("unable to delete session")
-		}
-		session := database.NewSessionData(clientID)
-		err = database.NewMemoryStore().SaveSession(session)
-		if err != nil {
-			return result, nil, errors.New("unable to save session")
-		}
-		if result.ConnectFlag.WillMessageFlag {
-			willMessage := database.NewWillMessage(
-				clientID,
-				result.WillMessageTopic.Payload,
-				result.WillMessageContent.Payload,
-				result.ConnectFlag.QoSLevel,
-				result.ConnectFlag.RemainFlag,
-			)
-			err := database.NewMemoryStore().SaveWillMessage(willMessage)
-			if err != nil {
-				return result, nil, errors.New("unable to save will message")
-			}
-		}
-	} else {
-		clientID := string(result.ClientIdentifier.Payload)
-		_, err := database.NewDatabaseStore().GetSession(clientID)
-		if err != nil {
-			return result, nil, errors.New("unable to get session")
-		}
+	return &result, nil, nil
+}
 
+func HandlerConnectPacket(payloads *ConnectPacketPayloads) ([]byte, error) {
+	databaseStore := database.NewDatabaseStore()
+	memoryStore := database.NewMemoryStore()
+	clientId := string(payloads.ClientIdentifier.Payload)
+	if payloads.ConnectFlag.CleanSession {
+		err := databaseStore.DeleteSession(clientId)
+		if err != nil {
+			return NewConnectAckPacket(false, ServerUnavailable), fmt.Errorf("unable to delete session during clean session: %v", err)
+		}
+		session := database.NewSessionData(clientId)
+		err = memoryStore.SaveSession(session)
+		if err != nil {
+			return NewConnectAckPacket(false, ServerUnavailable), fmt.Errorf("unable to save session: %v", err)
+		}
+		return NewConnectAckPacket(false, Accepted), nil
 	}
-
-	return result, NewConnectAckPacket(false, Accepted), nil
+	session, err := databaseStore.GetSession(clientId)
+	if err != nil {
+		logger.ErrorF("unable to get session from database: %v", err)
+		session := database.NewSessionData(clientId)
+		err = databaseStore.SaveSession(session)
+		if err != nil {
+			return NewConnectAckPacket(false, ServerUnavailable), fmt.Errorf("unable to save session: %v", err)
+		}
+		return NewConnectAckPacket(false, Accepted), nil
+	}
+	logger.InfoF("[%s]Session has been found in database", session.ClientID)
+	return NewConnectAckPacket(true, Accepted), nil
 }

@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 )
 
@@ -38,7 +39,7 @@ func TestByteToUInt16(t *testing.T) {
 		{[]byte{0xAF, 0x89}, 44937},
 	}
 	for _, tt := range tests {
-		number := ByteToUInt16(tt.input)
+		number := binary.BigEndian.Uint16(tt.input)
 		if number != tt.expect {
 			t.Errorf("输入=%x 期望=%d 实际=%d", tt.input, tt.expect, number)
 		}

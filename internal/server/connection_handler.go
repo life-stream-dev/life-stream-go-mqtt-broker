@@ -27,14 +27,29 @@ func (c *ConnectionHandler) handleFirstPacket() error {
 		return err
 	}
 
-	clientInfo, resp, err := pa.HandleConnectPacket(packet)
+	clientInfo, resp, err := pa.ParseConnectPacket(packet)
+
+	if resp != nil {
+		if err := send(c.conn, resp, c.connId); err != nil {
+			return err
+		}
+	}
+
 	if err != nil {
 		logger.ErrorF("[%s] Fail to parse CONNECT packet, details: %v", c.connId, err)
 		return err
 	}
+
 	logger.InfoF("First packet response %v", resp)
 
+	resp, err = pa.HandlerConnectPacket(clientInfo)
+
 	if err := send(c.conn, resp, c.connId); err != nil {
+		return err
+	}
+
+	if err != nil {
+		logger.ErrorF("[%s] Fail to handle CONNECT packet, details: %v", c.connId, err)
 		return err
 	}
 
@@ -68,7 +83,7 @@ func (c *ConnectionHandler) handlePacket() {
 			logger.ErrorF("[%s] Duplicate CONNECT package", c.connId)
 			return
 		case mqtt.PUBLISH:
-			_, err := pa.HandlePublishPacket(packet)
+			_, err := pa.ParsePublishPacket(packet)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle publish packet, details: %v", c.connId, err)
 				return

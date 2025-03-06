@@ -1,6 +1,7 @@
 package packet
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
@@ -48,7 +49,7 @@ func readPacketPayload(payload *mqtt.Payload) (FieldPayload, error) {
 	if startByte+1 >= contextLen {
 		return FieldPayload{}, errors.New("insufficient bytes for length")
 	}
-	length := int(mqtt.ByteToUInt16(payload.Context[startByte : startByte+2]))
+	length := int(binary.BigEndian.Uint16(payload.Context[startByte : startByte+2]))
 	end := startByte + 2 + length
 	if end > contextLen {
 		return FieldPayload{}, fmt.Errorf("payload length %d exceeds buffer (len=%d)", length, contextLen)

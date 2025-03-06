@@ -58,5 +58,6 @@ func NewSessionData(clientID string) *SessionData {
 		Subscriptions:  make(map[string]byte),
 		PendingPublish: make(map[uint16]string),
 		PendingPubrel:  make(map[uint16]struct{}),
+		InflightQoS2:   make(map[uint16]string),
 	}
 }

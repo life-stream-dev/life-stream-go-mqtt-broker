@@ -1,20 +1,17 @@
 package mqtt
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 )
 
-func ByteToUInt16(bytes []byte) uint16 {
-	if len(bytes) == 0 {
-		return 0
-	}
-	if len(bytes) == 1 {
-		return uint16(bytes[0])
-	}
-	return uint16(bytes[0])<<8 | uint16(bytes[1])
+func UInt16ToByte(number uint16) []byte {
+	result := make([]byte, 2)
+	binary.BigEndian.PutUint16(result, number)
+	return result
 }
 
 func ReadBytes(r io.Reader, l int) (byte, error) {

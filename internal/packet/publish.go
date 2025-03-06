@@ -1,8 +1,8 @@
 package packet
 
 import (
+	"encoding/binary"
 	"fmt"
-	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
 )
 
@@ -19,8 +19,27 @@ type PublishPacketPayloads struct {
 	Payload    []byte
 }
 
-func HandlePublishPacket(packet *mqtt.Packet) (*PublishPacketPayloads, error) {
-	//payload := packet.Payload
+func NewPublishPacket(packetPayloads *PublishPacketPayloads) []byte {
+	packet := make([]byte, 1)
+	packet[0] += 0x03 << 4
+	if packetPayloads.PacketFlag.QoS > 0 {
+		packet[0] += packetPayloads.PacketFlag.QoS << 1
+	}
+	payload := make([]byte, 0)
+	topicLength := packetPayloads.TopicName.PayloadLength
+	payload = append(payload, mqtt.UInt16ToByte(uint16(topicLength))...)
+	payload = append(payload, packetPayloads.TopicName.Payload...)
+	if packetPayloads.PacketFlag.QoS > 0 {
+		payload = append(payload, mqtt.UInt16ToByte(uint16(packetPayloads.PacketID))...)
+	}
+	payload = append(payload, packetPayloads.Payload...)
+	remainLength := len(payload)
+	packet = append(packet, mqtt.EncodeRemainingLength(remainLength)...)
+	packet = append(packet, payload...)
+	return packet
+}
+
+func ParsePublishPacket(packet *mqtt.Packet) (*PublishPacketPayloads, error) {
 	result := &PublishPacketPayloads{
 		PacketFlag: PublishPacketFlag{
 			RetryFlag: (packet.Header.Flags&0x08)>>3 == 1,
@@ -51,7 +70,7 @@ func HandlePublishPacket(packet *mqtt.Packet) (*PublishPacketPayloads, error) {
 		if err != nil {
 			return result, fmt.Errorf("error occured when reading packet ID, details: %v", err)
 		}
-		result.PacketID = int(mqtt.ByteToUInt16(packetId.Payload))
+		result.PacketID = int(binary.BigEndian.Uint16(packetId.Payload))
 		payloadLength -= 2
 	}
 
@@ -60,9 +79,6 @@ func HandlePublishPacket(packet *mqtt.Packet) (*PublishPacketPayloads, error) {
 		return result, fmt.Errorf("error occured when reading payload, details: %v", err)
 	}
 	result.Payload = payload
-
-	logger.Debug(string(result.TopicName.Payload))
-	logger.Debug(string(result.Payload))
 
 	return result, nil
 }

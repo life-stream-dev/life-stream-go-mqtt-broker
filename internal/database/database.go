@@ -8,6 +8,7 @@ import (
 	event2 "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/event"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/utils"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -17,6 +18,7 @@ import (
 
 var Client *mongo.Client
 var Database *mongo.Database
+var Sessions *mongo.Collection
 var OperationTimeout time.Duration
 
 type DBCloseCallback struct {
@@ -96,6 +98,24 @@ func ConnectDatabase() error {
 	}
 
 	Database = Client.Database(config.Database.Database)
+	Sessions = Client.Database(config.Database.Database).Collection(SessionCollectionName)
+
+	_, err = Sessions.Indexes().DropAll(context.Background())
+	if err != nil {
+		return fmt.Errorf("error occured while dropping database indexes: %v", err)
+	}
+
+	_, err = Sessions.Indexes().CreateOne(
+		context.Background(),
+		mongo.IndexModel{
+			Keys:    bson.D{{Key: "client_id", Value: 1}},
+			Options: options.Index().SetUnique(true).SetName("sessions_client_id_unique"),
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("error occured while creating database indexes: %v", err)
+	}
 
 	event2.NewCleaner().Add(NewDBCloseCallback())
 	return nil
