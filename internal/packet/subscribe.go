@@ -64,6 +64,13 @@ func ParseSubscribePacket(packet *mqtt.Packet) (*SubscribePacketPayloads, error)
 	return result, nil
 }
 
-func HandleSubscribePacket(payload *SubscribePacketPayloads) ([]byte, error) {
+func HandleSubscribePacket(payload *SubscribePacketPayloads, session *database.SessionData) ([]byte, error) {
+	for _, subscription := range payload.Subscriptions {
+		session.AddSubscription(subscription)
+	}
+	err := session.FlushData()
+	if err != nil {
+		return NewSubAckPacket(payload.PacketID, Failure), err
+	}
 	return NewSubAckPacket(payload.PacketID, SuccessQos0), nil
 }

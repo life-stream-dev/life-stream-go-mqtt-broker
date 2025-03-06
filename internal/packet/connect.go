@@ -154,21 +154,22 @@ func ParseConnectPacket(packet *mqtt.Packet) (*ConnectPacketPayloads, []byte, er
 	return &result, nil, nil
 }
 
-func HandlerConnectPacket(payloads *ConnectPacketPayloads) ([]byte, error) {
+func HandlerConnectPacket(payloads *ConnectPacketPayloads) ([]byte, *database.SessionData, error) {
 	databaseStore := database.NewDatabaseStore()
 	memoryStore := database.NewMemoryStore()
 	clientId := string(payloads.ClientIdentifier.Payload)
 	if payloads.ConnectFlag.CleanSession {
 		err := databaseStore.DeleteSession(clientId)
 		if err != nil {
-			return NewConnectAckPacket(false, ServerUnavailable), fmt.Errorf("unable to delete session during clean session: %v", err)
+			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to delete session during clean session: %v", err)
 		}
 		session := database.NewSessionData(clientId)
+		session.TempSession = true
 		err = memoryStore.SaveSession(session)
 		if err != nil {
-			return NewConnectAckPacket(false, ServerUnavailable), fmt.Errorf("unable to save session: %v", err)
+			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session: %v", err)
 		}
-		return NewConnectAckPacket(false, Accepted), nil
+		return NewConnectAckPacket(false, Accepted), session, nil
 	}
 	session, err := databaseStore.GetSession(clientId)
 	if err != nil {
@@ -176,10 +177,10 @@ func HandlerConnectPacket(payloads *ConnectPacketPayloads) ([]byte, error) {
 		session := database.NewSessionData(clientId)
 		err = databaseStore.SaveSession(session)
 		if err != nil {
-			return NewConnectAckPacket(false, ServerUnavailable), fmt.Errorf("unable to save session: %v", err)
+			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session: %v", err)
 		}
-		return NewConnectAckPacket(false, Accepted), nil
+		return NewConnectAckPacket(false, Accepted), session, nil
 	}
 	logger.InfoF("[%s]Session has been found in database", session.ClientID)
-	return NewConnectAckPacket(true, Accepted), nil
+	return NewConnectAckPacket(true, Accepted), session, nil
 }

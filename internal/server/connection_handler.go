@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
 	pa "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/packet"
@@ -9,9 +10,10 @@ import (
 )
 
 type ConnectionHandler struct {
-	conn      net.Conn
-	connId    string
-	keepAlive time.Duration
+	conn          net.Conn
+	connId        string
+	keepAlive     time.Duration
+	clientSession *database.SessionData
 }
 
 func (c *ConnectionHandler) handleFirstPacket() error {
@@ -42,7 +44,7 @@ func (c *ConnectionHandler) handleFirstPacket() error {
 
 	logger.InfoF("First packet response %v", resp)
 
-	resp, err = pa.HandlerConnectPacket(clientInfo)
+	resp, c.clientSession, err = pa.HandlerConnectPacket(clientInfo)
 
 	if err := send(c.conn, resp, c.connId); err != nil {
 		return err
@@ -94,7 +96,7 @@ func (c *ConnectionHandler) handlePacket() {
 				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
 				return
 			}
-			resp, err := pa.HandleSubscribePacket(result)
+			resp, err := pa.HandleSubscribePacket(result, c.clientSession)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
 				return
