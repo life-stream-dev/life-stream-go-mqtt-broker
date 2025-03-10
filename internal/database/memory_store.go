@@ -1,6 +1,8 @@
 package database
 
-import "errors"
+import (
+	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
+)
 
 type MemoryStore struct {
 	sessions     map[string]*SessionData
@@ -19,38 +21,40 @@ func NewMemoryStore() *MemoryStore {
 	return Store
 }
 
-func (ms *MemoryStore) GetSession(clientID string) (*SessionData, error) {
+func (ms *MemoryStore) GetSession(clientID string) *SessionData {
 	session, err := ms.sessions[clientID]
 	if !err {
-		return nil, errors.New("session not found")
+		logger.ErrorF("Session does not exist for clientID %s", clientID)
+		return nil
 	}
-	return session, nil
+	return session
 }
 
-func (ms *MemoryStore) SaveSession(session *SessionData) error {
+func (ms *MemoryStore) SaveSession(session *SessionData) bool {
 	ms.sessions[session.ClientID] = session
-	return nil
+	return true
 }
 
-func (ms *MemoryStore) DeleteSession(clientID string) error {
+func (ms *MemoryStore) DeleteSession(clientID string) bool {
 	delete(ms.sessions, clientID)
-	return nil
+	return true
 }
 
-func (ms *MemoryStore) GetWillMessage(clientID string) (*WillMessage, error) {
+func (ms *MemoryStore) GetWillMessage(clientID string) *WillMessage {
 	message, err := ms.willMessages[clientID]
 	if !err {
-		return nil, errors.New("message not found")
+		logger.ErrorF("WillMessage does not exist for clientID %s", clientID)
+		return nil
 	}
-	return message, nil
+	return message
 }
 
-func (ms *MemoryStore) SaveWillMessage(willMessage *WillMessage) error {
+func (ms *MemoryStore) SaveWillMessage(willMessage *WillMessage) bool {
 	ms.willMessages[willMessage.ClientID] = willMessage
-	return nil
+	return true
 }
 
-func (ms *MemoryStore) DeleteWillMessage(clientID string) error {
+func (ms *MemoryStore) DeleteWillMessage(clientID string) bool {
 	delete(ms.willMessages, clientID)
-	return nil
+	return true
 }

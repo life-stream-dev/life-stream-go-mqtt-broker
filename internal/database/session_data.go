@@ -20,15 +20,16 @@ func NewSessionData(clientID string) *SessionData {
 	}
 }
 
-func (session *SessionData) FlushData() error {
+func (session *SessionData) FlushData() bool {
 	if session.TempSession {
-		return nil
+		return true
 	}
 	return DbStore.SaveSession(session)
 }
 
 func (session *SessionData) AddSubscription(subscription *Subscription) {
 	session.Subscriptions[subscription.TopicName] = subscription.QoSLevel
+
 }
 
 func (session *SessionData) RemoveSubscription(subscription *Subscription) {

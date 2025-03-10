@@ -1,16 +1,15 @@
 package database
 
 const (
-	SessionCollectionName     = "sessions"
-	WillMessageCollectionName = "will_messages"
-	TopicCollectionName       = "topics"
+	SessionCollectionName      = "sessions"
+	WillMessageCollectionName  = "will_messages"
+	SubscriptionCollectionName = "subscriptions"
 )
 
-type Topic struct {
-	TopicName string `bson:"topic_name"`
-}
+var collectionsList = []string{SessionCollectionName, WillMessageCollectionName, SubscriptionCollectionName}
 
 type Subscription struct {
+	ClientID  string `bson:"client_id"`
 	TopicName string `bson:"topic_name"`
 	QoSLevel  byte   `bson:"qos_level"`
 }
@@ -24,19 +23,15 @@ type WillMessage struct {
 }
 
 type SessionStore interface {
-	GetSession(clientID string) (*SessionData, error)
-	SaveSession(session *SessionData) error
-	DeleteSession(clientID string) error
+	GetSession(clientID string) *SessionData
+	SaveSession(session *SessionData) bool
+	DeleteSession(clientID string) bool
 }
 
 type WillMessageStore interface {
-	GetWillMessage(clientID string) (*WillMessage, error)
-	SaveWillMessage(willMessage *WillMessage) error
-	DeleteWillMessage(clientID string) error
-}
-
-func NewTopic() *Topic {
-	return &Topic{}
+	GetWillMessage(clientID string) *WillMessage
+	SaveWillMessage(willMessage *WillMessage) bool
+	DeleteWillMessage(clientID string) bool
 }
 
 func NewWillMessage(clientID string, topic []byte, content []byte, qos byte, retained bool) *WillMessage {

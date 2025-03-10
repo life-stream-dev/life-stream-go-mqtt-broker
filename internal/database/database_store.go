@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -28,12 +27,29 @@ func NewDatabaseStore() *DBStore {
 	return DbStore
 }
 
-func (ds *DBStore) GetSession(clientID string) (*SessionData, error) {
+func HandleErr(err error) {
+	if mongo.IsDuplicateKeyError(err) {
+		logger.ErrorF("unique key conflicts: %s", err.Error())
+		return
+	}
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		logger.ErrorF("document does not exist: %s", err.Error())
+		return
+	}
+	if errors.Is(err, ClientIdEmptyError) {
+		logger.ErrorF("Client id can not be empty: %s", err.Error())
+		return
+	}
+	logger.ErrorF("database operation failed: %s", err.Error())
+}
+
+func (ds *DBStore) GetSession(clientID string) *SessionData {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if clientID == "" {
-		return nil, ClientIdEmptyError
+		HandleErr(ClientIdEmptyError)
+		return nil
 	}
 
 	filter := bson.D{{"client_id", clientID}}
@@ -44,23 +60,19 @@ func (ds *DBStore) GetSession(clientID string) (*SessionData, error) {
 	logger.DebugF("session query cost: %v", time.Since(startTime))
 
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return nil, fmt.Errorf("unique key conflicts: %w", err)
-		}
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, fmt.Errorf("document does not exist: %w", err)
-		}
-		return nil, fmt.Errorf("database operation failed: %w", err)
+		HandleErr(err)
+		return nil
 	}
-	return &session, nil
+	return &session
 }
 
-func (ds *DBStore) SaveSession(sessionData *SessionData) error {
+func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if sessionData.ClientID == "" {
-		return ClientIdEmptyError
+		HandleErr(ClientIdEmptyError)
+		return false
 	}
 
 	filter := bson.D{{"client_id", sessionData.ClientID}}
@@ -69,57 +81,49 @@ func (ds *DBStore) SaveSession(sessionData *SessionData) error {
 	result, err := Database.Collection(SessionCollectionName).ReplaceOne(ctx, filter, sessionData, opts)
 
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return fmt.Errorf("unique key conflicts: %w", err)
-		}
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return fmt.Errorf("document does not exist: %w", err)
-		}
-		return fmt.Errorf("database operation failed: %w", err)
+		HandleErr(err)
+		return false
 	}
 
-	logger.InfoF("Session saved: client_id=%s, matched=%d, modified=%d, upserted=%v",
+	logger.DebugF("Session saved: client_id=%s, matched=%d, modified=%d, upserted=%v",
 		sessionData.ClientID,
 		result.MatchedCount,
 		result.ModifiedCount,
 		result.UpsertedID != nil,
 	)
 
-	return nil
+	return true
 }
 
-func (ds *DBStore) DeleteSession(clientID string) error {
+func (ds *DBStore) DeleteSession(clientID string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if clientID == "" {
-		return ClientIdEmptyError
+		HandleErr(ClientIdEmptyError)
+		return false
 	}
 
 	filter := bson.D{{"client_id", clientID}}
 	result, err := Database.Collection(SessionCollectionName).DeleteOne(ctx, filter)
 
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return fmt.Errorf("unique key conflicts: %w", err)
-		}
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return fmt.Errorf("document does not exist: %w", err)
-		}
-		return fmt.Errorf("database operation failed: %w", err)
+		HandleErr(err)
+		return false
 	}
 
-	logger.InfoF("Session deleted: client_id=%s, deleted=%d", clientID, result.DeletedCount)
+	logger.DebugF("Session deleted: client_id=%s, deleted=%d", clientID, result.DeletedCount)
 
-	return nil
+	return true
 }
 
-func (ds *DBStore) GetWillMessage(clientID string) (*WillMessage, error) {
+func (ds *DBStore) GetWillMessage(clientID string) *WillMessage {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if clientID == "" {
-		return nil, ClientIdEmptyError
+		HandleErr(ClientIdEmptyError)
+		return nil
 	}
 
 	filter := bson.D{{"client_id", clientID}}
@@ -130,24 +134,20 @@ func (ds *DBStore) GetWillMessage(clientID string) (*WillMessage, error) {
 	logger.DebugF("will message query cost: %v", time.Since(startTime))
 
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return nil, fmt.Errorf("unique key conflicts: %w", err)
-		}
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, fmt.Errorf("document does not exist: %w", err)
-		}
-		return nil, fmt.Errorf("database operation failed: %w", err)
+		HandleErr(err)
+		return nil
 	}
 
-	return &message, nil
+	return &message
 }
 
-func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) error {
+func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if willMessage.ClientID == "" {
-		return ClientIdEmptyError
+		HandleErr(ClientIdEmptyError)
+		return false
 	}
 
 	filter := bson.D{{"client_id", willMessage.ClientID}}
@@ -156,47 +156,38 @@ func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) error {
 	result, err := Database.Collection(WillMessageCollectionName).ReplaceOne(ctx, filter, willMessage, opts)
 
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return fmt.Errorf("unique key conflicts: %w", err)
-		}
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return fmt.Errorf("document does not exist: %w", err)
-		}
-		return fmt.Errorf("database operation failed: %w", err)
+		HandleErr(err)
+		return false
 	}
 
-	logger.InfoF("Session saved: client_id=%s, matched=%d, modified=%d, upserted=%v",
+	logger.DebugF("Session saved: client_id=%s, matched=%d, modified=%d, upserted=%v",
 		willMessage.ClientID,
 		result.MatchedCount,
 		result.ModifiedCount,
 		result.UpsertedID != nil,
 	)
 
-	return nil
+	return true
 }
 
-func (ds *DBStore) DeleteWillMessage(clientID string) error {
+func (ds *DBStore) DeleteWillMessage(clientID string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if clientID == "" {
-		return ClientIdEmptyError
+		HandleErr(ClientIdEmptyError)
+		return false
 	}
 
 	filter := bson.D{{"client_id", clientID}}
 	result, err := Database.Collection(WillMessageCollectionName).DeleteOne(ctx, filter)
 
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return fmt.Errorf("unique key conflicts: %w", err)
-		}
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return fmt.Errorf("document does not exist: %w", err)
-		}
-		return fmt.Errorf("database operation failed: %w", err)
+		HandleErr(err)
+		return false
 	}
 
-	logger.InfoF("Session deleted: client_id=%s, deleted=%d", clientID, result.DeletedCount)
+	logger.DebugF("Session deleted: client_id=%s, deleted=%d", clientID, result.DeletedCount)
 
-	return nil
+	return true
 }

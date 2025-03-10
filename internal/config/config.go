@@ -24,6 +24,7 @@ type Config struct {
 	} `json:"database"`
 	DebugMode bool   `json:"debug_mode"`
 	AppName   string `json:"app_name"`
+	AppPort   int    `json:"app_port"`
 }
 
 var config Config

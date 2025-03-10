@@ -96,11 +96,7 @@ func (c *ConnectionHandler) handlePacket() {
 				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
 				return
 			}
-			resp, err := pa.HandleSubscribePacket(result, c.clientSession)
-			if err != nil {
-				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
-				return
-			}
+			resp := pa.HandleSubscribePacket(result, c.clientSession)
 			err = send(c.conn, resp, c.connId)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to send subscribe ack packet, details: %v", c.connId, err)
@@ -112,7 +108,7 @@ func (c *ConnectionHandler) handlePacket() {
 				logger.ErrorF("[%s] Fail to handle unsubscribe packet, details: %v", c.connId, err)
 				return
 			}
-			resp, err := pa.HandleUnSubscribePacket(result)
+			resp, err := pa.HandleUnSubscribePacket(result, c.clientSession)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle unsubscribe packet, details: %v", c.connId, err)
 				return

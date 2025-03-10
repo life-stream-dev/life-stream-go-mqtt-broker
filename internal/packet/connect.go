@@ -159,25 +159,22 @@ func HandlerConnectPacket(payloads *ConnectPacketPayloads) ([]byte, *database.Se
 	memoryStore := database.NewMemoryStore()
 	clientId := string(payloads.ClientIdentifier.Payload)
 	if payloads.ConnectFlag.CleanSession {
-		err := databaseStore.DeleteSession(clientId)
-		if err != nil {
-			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to delete session during clean session: %v", err)
+		if !databaseStore.DeleteSession(clientId) {
+			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to delete session during clean session")
 		}
 		session := database.NewSessionData(clientId)
 		session.TempSession = true
-		err = memoryStore.SaveSession(session)
-		if err != nil {
-			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session: %v", err)
+		if !memoryStore.SaveSession(session) {
+			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session")
 		}
 		return NewConnectAckPacket(false, Accepted), session, nil
 	}
-	session, err := databaseStore.GetSession(clientId)
-	if err != nil {
-		logger.ErrorF("unable to get session from database: %v", err)
+	session := databaseStore.GetSession(clientId)
+	if session == nil {
+		logger.ErrorF("unable to get session from database")
 		session := database.NewSessionData(clientId)
-		err = databaseStore.SaveSession(session)
-		if err != nil {
-			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session: %v", err)
+		if !databaseStore.SaveSession(session) {
+			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session")
 		}
 		return NewConnectAckPacket(false, Accepted), session, nil
 	}

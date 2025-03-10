@@ -13,12 +13,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"net/url"
+	"slices"
 	"time"
 )
 
 var Client *mongo.Client
 var Database *mongo.Database
 var Sessions *mongo.Collection
+var Subscriptions *mongo.Collection
 var OperationTimeout time.Duration
 
 type DBCloseCallback struct {
@@ -98,9 +100,29 @@ func ConnectDatabase() error {
 	}
 
 	Database = Client.Database(config.Database.Database)
-	Sessions = Client.Database(config.Database.Database).Collection(SessionCollectionName)
+	collections, err := Database.ListCollectionNames(context.Background(), bson.D{})
+	if err != nil {
+		return fmt.Errorf("error occured while listing collections: %v", err)
+	}
+
+	for _, collection := range collectionsList {
+		if !slices.Contains(collections, collection) {
+			logger.DebugF("Creating collection: %s", collection)
+			if err := Database.CreateCollection(context.Background(), collection); err != nil {
+				return fmt.Errorf("error occured while creating collection %s, details: %v", collection, err)
+			}
+		}
+	}
+
+	Sessions = Database.Collection(SessionCollectionName)
+	Subscriptions = Database.Collection(SubscriptionCollectionName)
 
 	_, err = Sessions.Indexes().DropAll(context.Background())
+	if err != nil {
+		return fmt.Errorf("error occured while dropping database indexes: %v", err)
+	}
+
+	_, err = Subscriptions.Indexes().DropAll(context.Background())
 	if err != nil {
 		return fmt.Errorf("error occured while dropping database indexes: %v", err)
 	}
@@ -110,6 +132,19 @@ func ConnectDatabase() error {
 		mongo.IndexModel{
 			Keys:    bson.D{{Key: "client_id", Value: 1}},
 			Options: options.Index().SetUnique(true).SetName("sessions_client_id_unique"),
+		},
+	)
+
+	_, err = Subscriptions.Indexes().CreateMany(
+		context.Background(), []mongo.IndexModel{
+			{
+				Keys:    bson.D{{Key: "path", Value: 1}},
+				Options: options.Index().SetUnique(true).SetName("subscriptions_path_unique"),
+			},
+			{
+				Keys:    bson.D{{Key: "_id", Value: 1}},
+				Options: options.Index().SetName("subscriptions_id_unique"),
+			},
 		},
 	)
 
