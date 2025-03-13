@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"errors"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -11,23 +12,34 @@ import (
 )
 
 type DBStore struct {
-	client *mongo.Client
-	db     *mongo.Database
+	client       *mongo.Client
+	db           *mongo.Database
+	sessions     map[string]*SessionData
+	willMessages map[string]*WillMessage
+	sessionCache *expirable.LRU[string, *SessionData]
+	topicCache   *expirable.LRU[string, *TopicTreeNode]
 }
 
 var (
-	DbStore            *DBStore
+	store              *DBStore
 	ClientIdEmptyError = errors.New("client_id is empty")
 )
 
 func NewDatabaseStore() *DBStore {
-	if DbStore == nil {
-		DbStore = &DBStore{client: Client, db: Database}
+	if store == nil {
+		store = &DBStore{
+			client:       Client,
+			db:           Database,
+			sessions:     make(map[string]*SessionData),
+			willMessages: make(map[string]*WillMessage),
+			sessionCache: expirable.NewLRU[string, *SessionData](256, nil, time.Hour),
+			topicCache:   expirable.NewLRU[string, *TopicTreeNode](256, nil, time.Hour),
+		}
 	}
-	return DbStore
+	return store
 }
 
-func HandleErr(err error) {
+func handleErr(err error) {
 	if mongo.IsDuplicateKeyError(err) {
 		logger.ErrorF("unique key conflicts: %s", err.Error())
 		return
@@ -44,11 +56,17 @@ func HandleErr(err error) {
 }
 
 func (ds *DBStore) GetSession(clientID string) *SessionData {
+	if session, ok := ds.sessions[clientID]; ok {
+		return session
+	}
+	if session, ok := ds.sessionCache.Get(clientID); ok {
+		return session
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if clientID == "" {
-		HandleErr(ClientIdEmptyError)
+		handleErr(ClientIdEmptyError)
 		return nil
 	}
 
@@ -60,18 +78,27 @@ func (ds *DBStore) GetSession(clientID string) *SessionData {
 	logger.DebugF("session query cost: %v", time.Since(startTime))
 
 	if err != nil {
-		HandleErr(err)
+		handleErr(err)
 		return nil
 	}
+
+	ds.sessionCache.Add(clientID, &session)
 	return &session
 }
 
 func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
+	if sessionData.TempSession {
+		delete(ds.sessions, sessionData.ClientID)
+		ds.sessions[sessionData.ClientID] = sessionData
+		return true
+	}
+
+	ds.sessionCache.Remove(sessionData.ClientID)
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if sessionData.ClientID == "" {
-		HandleErr(ClientIdEmptyError)
+		handleErr(ClientIdEmptyError)
 		return false
 	}
 
@@ -81,7 +108,7 @@ func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
 	result, err := Database.Collection(SessionCollectionName).ReplaceOne(ctx, filter, sessionData, opts)
 
 	if err != nil {
-		HandleErr(err)
+		handleErr(err)
 		return false
 	}
 
@@ -92,15 +119,23 @@ func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
 		result.UpsertedID != nil,
 	)
 
+	ds.sessionCache.Add(sessionData.ClientID, sessionData)
 	return true
 }
 
 func (ds *DBStore) DeleteSession(clientID string) bool {
+	if _, ok := ds.sessions[clientID]; ok {
+		delete(ds.sessions, clientID)
+		return true
+	}
+
+	ds.sessionCache.Remove(clientID)
+
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
 	if clientID == "" {
-		HandleErr(ClientIdEmptyError)
+		handleErr(ClientIdEmptyError)
 		return false
 	}
 
@@ -108,7 +143,7 @@ func (ds *DBStore) DeleteSession(clientID string) bool {
 	result, err := Database.Collection(SessionCollectionName).DeleteOne(ctx, filter)
 
 	if err != nil {
-		HandleErr(err)
+		handleErr(err)
 		return false
 	}
 
@@ -122,7 +157,7 @@ func (ds *DBStore) GetWillMessage(clientID string) *WillMessage {
 	defer cancel()
 
 	if clientID == "" {
-		HandleErr(ClientIdEmptyError)
+		handleErr(ClientIdEmptyError)
 		return nil
 	}
 
@@ -134,7 +169,7 @@ func (ds *DBStore) GetWillMessage(clientID string) *WillMessage {
 	logger.DebugF("will message query cost: %v", time.Since(startTime))
 
 	if err != nil {
-		HandleErr(err)
+		handleErr(err)
 		return nil
 	}
 
@@ -146,7 +181,7 @@ func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) bool {
 	defer cancel()
 
 	if willMessage.ClientID == "" {
-		HandleErr(ClientIdEmptyError)
+		handleErr(ClientIdEmptyError)
 		return false
 	}
 
@@ -156,7 +191,7 @@ func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) bool {
 	result, err := Database.Collection(WillMessageCollectionName).ReplaceOne(ctx, filter, willMessage, opts)
 
 	if err != nil {
-		HandleErr(err)
+		handleErr(err)
 		return false
 	}
 
@@ -175,7 +210,7 @@ func (ds *DBStore) DeleteWillMessage(clientID string) bool {
 	defer cancel()
 
 	if clientID == "" {
-		HandleErr(ClientIdEmptyError)
+		handleErr(ClientIdEmptyError)
 		return false
 	}
 
@@ -183,7 +218,7 @@ func (ds *DBStore) DeleteWillMessage(clientID string) bool {
 	result, err := Database.Collection(WillMessageCollectionName).DeleteOne(ctx, filter)
 
 	if err != nil {
-		HandleErr(err)
+		handleErr(err)
 		return false
 	}
 

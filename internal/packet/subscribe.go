@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
-	sub "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/subscription"
 )
 
 type SubscribeState byte
@@ -67,10 +66,9 @@ func ParseSubscribePacket(packet *mqtt.Packet) (*SubscribePacketPayloads, error)
 
 func HandleSubscribePacket(payload *SubscribePacketPayloads, session *database.SessionData) []byte {
 	for _, subscription := range payload.Subscriptions {
-		subscription.ClientID = session.ClientID
-		sub.InsertSubscription(*subscription)
+		session.AddSubscription(subscription)
 	}
-	if !session.FlushData() {
+	if !session.Save() {
 		return NewSubAckPacket(payload.PacketID, Failure)
 	}
 	return NewSubAckPacket(payload.PacketID, SuccessQos0)

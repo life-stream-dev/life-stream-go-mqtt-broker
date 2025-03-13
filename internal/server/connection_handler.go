@@ -121,6 +121,7 @@ func (c *ConnectionHandler) handlePacket() {
 		case mqtt.PINGREQ:
 			handlePingReq(c.conn, c.connId)
 		case mqtt.DISCONNECT:
+			pa.HandleDisconnectPacket(c.clientSession)
 			logger.InfoF("[%s] Client disconnect", c.connId)
 			return
 		default:

@@ -1,5 +1,7 @@
 package database
 
+import "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
+
 type SessionData struct {
 	ClientID       string              `bson:"client_id"`
 	TempSession    bool                `bson:"temp_session"`
@@ -20,18 +22,31 @@ func NewSessionData(clientID string) *SessionData {
 	}
 }
 
-func (session *SessionData) FlushData() bool {
-	if session.TempSession {
-		return true
-	}
-	return DbStore.SaveSession(session)
+func (session *SessionData) Save() bool {
+	return store.SaveSession(session)
 }
 
 func (session *SessionData) AddSubscription(subscription *Subscription) {
+	subscription.ClientID = session.ClientID
+	err := store.InsertSubscription(subscription)
+	if err != nil {
+		logger.ErrorF("Error while inserting subscription %v", err)
+	}
 	session.Subscriptions[subscription.TopicName] = subscription.QoSLevel
-
 }
 
 func (session *SessionData) RemoveSubscription(subscription *Subscription) {
+	subscription.ClientID = session.ClientID
+	store.DeleteSubscription(subscription)
 	delete(session.Subscriptions, subscription.TopicName)
+}
+
+func (session *SessionData) RemoveAllSubscriptions() {
+	for k, v := range session.Subscriptions {
+		store.DeleteSubscription(&Subscription{
+			ClientID:  session.ClientID,
+			TopicName: k,
+			QoSLevel:  v,
+		})
+	}
 }

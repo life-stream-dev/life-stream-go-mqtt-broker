@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
-	sub "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/subscription"
 )
 
 type UnSubscribePacketPayloads struct {
@@ -53,8 +52,7 @@ func ParseUnSubscribePacket(packet *mqtt.Packet) (*UnSubscribePacketPayloads, er
 
 func HandleUnSubscribePacket(payload *UnSubscribePacketPayloads, session *database.SessionData) ([]byte, error) {
 	for _, subscription := range payload.Subscriptions {
-		subscription.ClientID = session.ClientID
-		sub.DeleteSubscription(*subscription)
+		session.RemoveSubscription(subscription)
 	}
 	return NewUnSubAckPacket(payload.PacketID, SuccessQos0), nil
 }

@@ -22,7 +22,6 @@ task run
 | 英文缩写 | 英文全称                   | 中文名        |  
 |:-----|:-----------------------|:-----------|
 | DSS  | Database Session Store | 数据库会话存储    |
-| MSS  | Memory Session Store   | 内存会话存储     |
 | PIM  | Packet Id Manager      | 数据包 ID 管理器 |
 | WMS  | Will Message Store     | 遗嘱消息存储     |
 

@@ -156,28 +156,23 @@ func ParseConnectPacket(packet *mqtt.Packet) (*ConnectPacketPayloads, []byte, er
 
 func HandlerConnectPacket(payloads *ConnectPacketPayloads) ([]byte, *database.SessionData, error) {
 	databaseStore := database.NewDatabaseStore()
-	memoryStore := database.NewMemoryStore()
 	clientId := string(payloads.ClientIdentifier.Payload)
+	var session *database.SessionData
 	if payloads.ConnectFlag.CleanSession {
-		if !databaseStore.DeleteSession(clientId) {
-			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to delete session during clean session")
-		}
-		session := database.NewSessionData(clientId)
-		session.TempSession = true
-		if !memoryStore.SaveSession(session) {
-			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session")
-		}
-		return NewConnectAckPacket(false, Accepted), session, nil
+		databaseStore.DeleteSession(clientId)
+		session = nil
+	} else {
+		session = databaseStore.GetSession(clientId)
 	}
-	session := databaseStore.GetSession(clientId)
 	if session == nil {
-		logger.ErrorF("unable to get session from database")
-		session := database.NewSessionData(clientId)
+		session = database.NewSessionData(clientId)
+		session.TempSession = payloads.ConnectFlag.CleanSession
 		if !databaseStore.SaveSession(session) {
 			return NewConnectAckPacket(false, ServerUnavailable), nil, fmt.Errorf("unable to save session")
 		}
-		return NewConnectAckPacket(false, Accepted), session, nil
+		logger.InfoF("[%s] Session has been created", session.ClientID)
+	} else {
+		logger.InfoF("[%s] Session has been found in database", session.ClientID)
 	}
-	logger.InfoF("[%s]Session has been found in database", session.ClientID)
 	return NewConnectAckPacket(true, Accepted), session, nil
 }
