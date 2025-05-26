@@ -1,3 +1,4 @@
+// Package database 实现了MQTT服务器的数据存储功能
 package database
 
 import (
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-// TopicTreeNode 主题订阅树节点
+// TopicTreeNode 表示主题订阅树的节点
 type TopicTreeNode struct {
 	ID    primitive.ObjectID `bson:"_id"`   // MongoDB文档ID
 	Path  string             `bson:"path"`  // 物化路径（如 "sport/football"）
@@ -30,6 +31,7 @@ type TopicTreeNode struct {
 	Terminals []Subscription `bson:"terminals"` // 精确匹配的订阅者
 }
 
+// createNode 创建新的主题树节点
 func createNode(path string, level string) *TopicTreeNode {
 	result := &TopicTreeNode{
 		ID:           primitive.NewObjectID(),
@@ -43,6 +45,7 @@ func createNode(path string, level string) *TopicTreeNode {
 	return result
 }
 
+// getOrCreateNode 获取或创建主题树节点
 func (ds *DBStore) getOrCreateNode(path string, level string) *TopicTreeNode {
 	result := ds.getNodeByPath(path)
 	if result != nil {
@@ -51,7 +54,9 @@ func (ds *DBStore) getOrCreateNode(path string, level string) *TopicTreeNode {
 	return createNode(path, level)
 }
 
+// getNodeByPath 根据路径获取主题树节点
 func (ds *DBStore) getNodeByPath(path string) *TopicTreeNode {
+	// 首先检查缓存
 	if node, ok := ds.topicCache.Get(path); ok {
 		return node
 	}
@@ -74,7 +79,9 @@ func (ds *DBStore) getNodeByPath(path string) *TopicTreeNode {
 	return &topicNode
 }
 
+// getNodeByID 根据ID获取主题树节点
 func (ds *DBStore) getNodeByID(id primitive.ObjectID) *TopicTreeNode {
+	// 首先检查缓存
 	if node, ok := ds.topicCache.Get(id.String()); ok {
 		return node
 	}
@@ -97,6 +104,7 @@ func (ds *DBStore) getNodeByID(id primitive.ObjectID) *TopicTreeNode {
 	return &topicNode
 }
 
+// save 保存主题树节点到数据库
 func (topic *TopicTreeNode) save() {
 	store.topicCache.Remove(topic.Path)
 
@@ -122,21 +130,26 @@ func (topic *TopicTreeNode) save() {
 	)
 }
 
+// equal 比较两个订阅是否相等
 func (sc *Subscription) equal(subscription Subscription) bool {
 	return subscription.ClientID == sc.ClientID && subscription.TopicName == sc.TopicName
 }
 
+// equalId 比较两个订阅的客户端ID是否相等
 func (sc *Subscription) equalId(subscription Subscription) bool {
 	return subscription.ClientID == sc.ClientID
 }
 
+// ClearSubscription 清除会话的所有订阅
 func (ds *DBStore) ClearSubscription(session *SessionData) {
 
 }
 
+// DeleteSubscription 删除订阅
 func (ds *DBStore) DeleteSubscription(subscription *Subscription) bool {
 	levels := strings.Split(subscription.TopicName, "/")
 
+	// 处理通配符订阅
 	if slices.Contains(levels, "#") {
 		path := strings.Join(levels[:len(levels)-1], "/")
 		node := ds.getNodeByPath(path)
@@ -148,6 +161,7 @@ func (ds *DBStore) DeleteSubscription(subscription *Subscription) bool {
 		return false
 	}
 
+	// 处理普通订阅
 	node := ds.getNodeByPath(subscription.TopicName)
 	if node != nil {
 		node.Terminals = slices.DeleteFunc(node.Terminals, subscription.equal)
@@ -157,6 +171,7 @@ func (ds *DBStore) DeleteSubscription(subscription *Subscription) bool {
 	return false
 }
 
+// InsertSubscription 插入新的订阅
 func (ds *DBStore) InsertSubscription(subscription *Subscription) error {
 	levels := strings.Split(subscription.TopicName, "/")
 
@@ -168,11 +183,13 @@ func (ds *DBStore) InsertSubscription(subscription *Subscription) error {
 		currentNode = ds.getOrCreateNode(path, level)
 
 		if parentNode == nil {
-
+			// 根节点处理
 		} else if level == "+" {
+			// 处理单层通配符
 			parentNode.WildcardPlus = currentNode.ID
 			parentNode.save()
 		} else if level == "#" {
+			// 处理多层通配符
 			if i != len(levels)-1 {
 				return fmt.Errorf("'#' must be the last level, topic: %s", subscription.TopicName)
 			}
@@ -180,12 +197,14 @@ func (ds *DBStore) InsertSubscription(subscription *Subscription) error {
 			parentNode.save()
 			return nil
 		} else {
+			// 处理普通层级
 			if _, ok := parentNode.Children[level]; !ok {
 				parentNode.Children[level] = currentNode.ID
 				parentNode.save()
 			}
 		}
 
+		// 如果是最后一个层级，添加终端订阅
 		if i == len(levels)-1 && !slices.ContainsFunc(currentNode.Terminals, subscription.equal) {
 			currentNode.Terminals = append(currentNode.Terminals, *subscription)
 			currentNode.save()
@@ -197,12 +216,13 @@ func (ds *DBStore) InsertSubscription(subscription *Subscription) error {
 	return nil
 }
 
+// MatchTopic 匹配主题订阅
 func (ds *DBStore) MatchTopic(publishTopic string) ([]Subscription, error) {
 	// 拆分发布主题为层级数组
 	levels := strings.Split(publishTopic, "/")
 	var results []Subscription
 
-	// 初始化队列：从根节点开始（假设根节点 path 为空）
+	// 初始化队列：从根节点开始
 	rootNode := ds.getNodeByPath(levels[0])
 	rootPlus := ds.getNodeByPath("+")
 	var queue []*TopicTreeNode
@@ -223,7 +243,7 @@ func (ds *DBStore) MatchTopic(publishTopic string) ([]Subscription, error) {
 
 			// 2. 精确匹配子节点
 			if childID, ok := node.Children[currentLevel]; ok {
-				childNode := ds.getNodeByID(childID) // 从 MongoDB 获取子节点
+				childNode := ds.getNodeByID(childID)
 				nextQueue = append(nextQueue, childNode)
 			}
 
@@ -248,16 +268,5 @@ func (ds *DBStore) MatchTopic(publishTopic string) ([]Subscription, error) {
 		results = append(results, node.Terminals...)
 	}
 
-	// 6. 去重（假设 Subscription 有唯一标识如 ClientID+Topic）
-	seen := make(map[string]bool)
-	finalResults := make([]Subscription, 0)
-	for _, sub := range results {
-		key := sub.ClientID + "|" + sub.TopicName
-		if !seen[key] {
-			finalResults = append(finalResults, sub)
-			seen[key] = true
-		}
-	}
-
-	return finalResults, nil
+	return results, nil
 }

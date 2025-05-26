@@ -1,22 +1,29 @@
+// Package server 实现了MQTT服务器的连接处理功能
 package server
 
 import (
+	. "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/connection"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/database"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/logger"
 	"github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/mqtt"
-	pa "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/packet"
+	. "github.com/life-stream-dev/life-stream-go-mqtt-broker/internal/packet"
 	"net"
 	"time"
 )
 
+// ConnectionHandler 处理MQTT客户端连接
 type ConnectionHandler struct {
-	conn          net.Conn
-	connId        string
-	keepAlive     time.Duration
-	clientSession *database.SessionData
+	conn          net.Conn              // 网络连接
+	connId        string                // 连接ID
+	keepAlive     time.Duration         // 心跳间隔
+	clientSession *database.SessionData // 客户端会话数据
 }
 
+// handleFirstPacket 处理连接建立后的第一个报文（必须是CONNECT）
 func (c *ConnectionHandler) handleFirstPacket() error {
+	connManager := GetConnectionManager()
+
+	// 设置读取超时
 	_ = c.conn.SetReadDeadline(time.Now().Add(time.Minute))
 	packet, err := mqtt.ReadPacket(c.conn)
 	if err != nil {
@@ -24,15 +31,18 @@ func (c *ConnectionHandler) handleFirstPacket() error {
 		return err
 	}
 
+	// 验证第一个报文必须是CONNECT
 	if packet.Header.Type != mqtt.CONNECT {
 		logger.ErrorF("[%s] Invalid first packet type, expected %s packet, but got %s packet", c.connId, mqtt.CONNECT.String(), packet.Header.Type.String())
 		return err
 	}
 
-	clientInfo, resp, err := pa.ParseConnectPacket(packet)
+	// 解析CONNECT报文
+	clientInfo, resp, err := ParseConnectPacket(packet)
 
+	// 发送响应
 	if resp != nil {
-		if err := send(c.conn, resp, c.connId); err != nil {
+		if err := Send(c.conn, resp, c.connId); err != nil {
 			return err
 		}
 	}
@@ -44,9 +54,11 @@ func (c *ConnectionHandler) handleFirstPacket() error {
 
 	logger.InfoF("First packet response %v", resp)
 
-	resp, c.clientSession, err = pa.HandlerConnectPacket(clientInfo)
+	// 处理CONNECT报文
+	resp, c.clientSession, err = HandlerConnectPacket(clientInfo)
 
-	if err := send(c.conn, resp, c.connId); err != nil {
+	// 发送响应
+	if err := Send(c.conn, resp, c.connId); err != nil {
 		return err
 	}
 
@@ -55,6 +67,12 @@ func (c *ConnectionHandler) handleFirstPacket() error {
 		return err
 	}
 
+	connManager.AddConnection(c.clientSession.ClientID, &Connection{
+		Conn:   c.conn,
+		ConnID: c.connId,
+	})
+
+	// 设置心跳间隔
 	c.keepAlive = time.Duration(clientInfo.KeepAlive) * time.Second
 	if c.keepAlive == 0 {
 		logger.WarnF("[%s] Keep alive set to 0, heartbeat disable", c.connId)
@@ -64,15 +82,18 @@ func (c *ConnectionHandler) handleFirstPacket() error {
 	return nil
 }
 
+// handlePacket 处理后续的MQTT报文
 func (c *ConnectionHandler) handlePacket() {
 	for {
+		// 设置读取超时
 		if c.keepAlive != 0 {
 			_ = c.conn.SetReadDeadline(time.Now().Add(c.keepAlive + 10*time.Second))
 		}
 
+		// 读取报文
 		packet, err := mqtt.ReadPacket(c.conn)
 		if err != nil {
-			handleReadError(c.connId, err)
+			HandleReadError(c.connId, err)
 			return
 		}
 
@@ -80,48 +101,54 @@ func (c *ConnectionHandler) handlePacket() {
 
 		logger.DebugF("[%s] Receive %s package, data %+v", c.connId, packet.Header.Type, packet.Payload)
 
+		// 根据报文类型处理
 		switch packet.Header.Type {
 		case mqtt.CONNECT:
 			logger.ErrorF("[%s] Duplicate CONNECT package", c.connId)
 			return
 		case mqtt.PUBLISH:
-			_, err := pa.ParsePublishPacket(packet)
+			result, err := ParsePublishPacket(packet)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle publish packet, details: %v", c.connId, err)
 				return
 			}
+			if result.Payload == nil {
+				logger.WarnF("[%s] Receive a zero length payload packet, ", c.connId)
+				break
+			}
+			HandlePublishPacket(result, c.clientSession)
 		case mqtt.SUBSCRIBE:
-			result, err := pa.ParseSubscribePacket(packet)
+			result, err := ParseSubscribePacket(packet)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle subscribe packet, details: %v", c.connId, err)
 				return
 			}
-			resp := pa.HandleSubscribePacket(result, c.clientSession)
-			err = send(c.conn, resp, c.connId)
+			resp := HandleSubscribePacket(result, c.clientSession)
+			err = Send(c.conn, resp, c.connId)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to send subscribe ack packet, details: %v", c.connId, err)
 				return
 			}
 		case mqtt.UNSUBSCRIBE:
-			result, err := pa.ParseUnSubscribePacket(packet)
+			result, err := ParseUnSubscribePacket(packet)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle unsubscribe packet, details: %v", c.connId, err)
 				return
 			}
-			resp, err := pa.HandleUnSubscribePacket(result, c.clientSession)
+			resp, err := HandleUnSubscribePacket(result, c.clientSession)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to handle unsubscribe packet, details: %v", c.connId, err)
 				return
 			}
-			err = send(c.conn, resp, c.connId)
+			err = Send(c.conn, resp, c.connId)
 			if err != nil {
 				logger.ErrorF("[%s] Fail to send unsubscribe ack packet, details: %v", c.connId, err)
 				return
 			}
 		case mqtt.PINGREQ:
-			handlePingReq(c.conn, c.connId)
+			HandlePingReq(c.conn, c.connId)
 		case mqtt.DISCONNECT:
-			pa.HandleDisconnectPacket(c.clientSession)
+			HandleDisconnectPacket(c.clientSession)
 			logger.InfoF("[%s] Client disconnect", c.connId)
 			return
 		default:
@@ -131,17 +158,22 @@ func (c *ConnectionHandler) handlePacket() {
 	}
 }
 
+// handleConnection 处理完整的连接生命周期
 func (c *ConnectionHandler) handleConnection() {
+	// 确保连接最终被关闭
 	defer func() {
+		GetConnectionManager().RemoveConnection(c.clientSession.ClientID)
 		logger.DebugF("[%s] Connection closed", c.connId)
-		if err := c.conn.Close(); err != nil && !isNetClosedError(err) {
+		if err := c.conn.Close(); err != nil && !IsNetClosedError(err) {
 			logger.WarnF("[%s] Error occured while closing connection, details: %v", c.connId, err)
 		}
 	}()
 
+	// 处理第一个报文
 	if err := c.handleFirstPacket(); err != nil {
 		return
 	}
 
+	// 处理后续报文
 	c.handlePacket()
 }

@@ -46,7 +46,7 @@ func ParseSubscribePacket(packet *mqtt.Packet) (*SubscribePacketPayloads, error)
 	}
 	result.PacketID = int(binary.BigEndian.Uint16(packetId))
 
-	for packet.Payload.CurrentPtr != packet.Payload.ContextLen {
+	for packet.Payload.CheckRemainingLength() {
 		subscript := &database.Subscription{}
 		topicFilter, err := readPacketPayload(packet.Payload)
 		if err != nil {

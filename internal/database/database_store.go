@@ -1,3 +1,4 @@
+// Package database 实现了MQTT服务器的数据存储功能
 package database
 
 import (
@@ -11,13 +12,14 @@ import (
 	"time"
 )
 
+// DBStore 实现了数据库存储接口
 type DBStore struct {
-	client       *mongo.Client
-	db           *mongo.Database
-	sessions     map[string]*SessionData
-	willMessages map[string]*WillMessage
-	sessionCache *expirable.LRU[string, *SessionData]
-	topicCache   *expirable.LRU[string, *TopicTreeNode]
+	client       *mongo.Client                          // MongoDB客户端
+	db           *mongo.Database                        // 数据库实例
+	sessions     map[string]*SessionData                // 内存中的会话数据
+	willMessages map[string]*WillMessage                // 遗嘱消息
+	sessionCache *expirable.LRU[string, *SessionData]   // 会话缓存
+	topicCache   *expirable.LRU[string, *TopicTreeNode] // 主题树缓存
 }
 
 var (
@@ -25,6 +27,7 @@ var (
 	ClientIdEmptyError = errors.New("client_id is empty")
 )
 
+// NewDatabaseStore 创建新的数据库存储实例
 func NewDatabaseStore() *DBStore {
 	if store == nil {
 		store = &DBStore{
@@ -39,6 +42,7 @@ func NewDatabaseStore() *DBStore {
 	return store
 }
 
+// handleErr 处理数据库操作错误
 func handleErr(err error) {
 	if mongo.IsDuplicateKeyError(err) {
 		logger.ErrorF("unique key conflicts: %s", err.Error())
@@ -55,13 +59,17 @@ func handleErr(err error) {
 	logger.ErrorF("database operation failed: %s", err.Error())
 }
 
+// GetSession 获取客户端会话数据
 func (ds *DBStore) GetSession(clientID string) *SessionData {
+	// 首先检查内存中的会话
 	if session, ok := ds.sessions[clientID]; ok {
 		return session
 	}
+	// 然后检查缓存
 	if session, ok := ds.sessionCache.Get(clientID); ok {
 		return session
 	}
+	// 最后从数据库查询
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
 
@@ -86,13 +94,16 @@ func (ds *DBStore) GetSession(clientID string) *SessionData {
 	return &session
 }
 
+// SaveSession 保存客户端会话数据
 func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
+	// 临时会话只保存在内存中
 	if sessionData.TempSession {
 		delete(ds.sessions, sessionData.ClientID)
 		ds.sessions[sessionData.ClientID] = sessionData
 		return true
 	}
 
+	// 从缓存中移除
 	ds.sessionCache.Remove(sessionData.ClientID)
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
@@ -102,6 +113,7 @@ func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
 		return false
 	}
 
+	// 保存到数据库
 	filter := bson.D{{"client_id", sessionData.ClientID}}
 	opts := options.Replace().SetUpsert(true)
 
@@ -123,12 +135,15 @@ func (ds *DBStore) SaveSession(sessionData *SessionData) bool {
 	return true
 }
 
+// DeleteSession 删除客户端会话数据
 func (ds *DBStore) DeleteSession(clientID string) bool {
+	// 从内存中删除
 	if _, ok := ds.sessions[clientID]; ok {
 		delete(ds.sessions, clientID)
 		return true
 	}
 
+	// 从缓存中删除
 	ds.sessionCache.Remove(clientID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
@@ -139,6 +154,7 @@ func (ds *DBStore) DeleteSession(clientID string) bool {
 		return false
 	}
 
+	// 从数据库中删除
 	filter := bson.D{{"client_id", clientID}}
 	result, err := Database.Collection(SessionCollectionName).DeleteOne(ctx, filter)
 
@@ -152,6 +168,7 @@ func (ds *DBStore) DeleteSession(clientID string) bool {
 	return true
 }
 
+// GetWillMessage 获取遗嘱消息
 func (ds *DBStore) GetWillMessage(clientID string) *WillMessage {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
@@ -176,6 +193,7 @@ func (ds *DBStore) GetWillMessage(clientID string) *WillMessage {
 	return &message
 }
 
+// SaveWillMessage 保存遗嘱消息
 func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()
@@ -205,6 +223,7 @@ func (ds *DBStore) SaveWillMessage(willMessage *WillMessage) bool {
 	return true
 }
 
+// DeleteWillMessage 删除遗嘱消息
 func (ds *DBStore) DeleteWillMessage(clientID string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
 	defer cancel()

@@ -12,6 +12,10 @@ type FieldPayload struct {
 	Payload       []byte
 }
 
+func readPacketResumeByte(payload *mqtt.Payload) ([]byte, error) {
+	return readPacketBytes(payload, payload.ContextLen-payload.CurrentPtr)
+}
+
 func readPacketByte(payload *mqtt.Payload) (byte, error) {
 	startByte := payload.CurrentPtr
 	if startByte >= payload.ContextLen {
