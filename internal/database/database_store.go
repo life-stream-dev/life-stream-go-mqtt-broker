@@ -59,6 +59,29 @@ func handleErr(err error) {
 	logger.ErrorF("database operation failed: %s", err.Error())
 }
 
+func (ds *DBStore) GetAllSession() []SessionData {
+	sessions := make([]SessionData, len(ds.sessions))
+	i := 0
+	for _, value := range ds.sessions {
+		sessions[i] = *value
+		i++
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
+	defer cancel()
+	cursor, _ := Database.Collection(SessionCollectionName).Find(ctx, bson.M{})
+	defer cursor.Close(ctx)
+	count := 0
+	for cursor.Next(ctx) {
+		var session SessionData
+		if err := cursor.Decode(&session); err != nil {
+			continue
+		}
+		count++
+		sessions = append(sessions, session)
+	}
+	return sessions
+}
+
 // GetSession 获取客户端会话数据
 func (ds *DBStore) GetSession(clientID string) *SessionData {
 	// 首先检查内存中的会话

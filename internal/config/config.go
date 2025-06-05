@@ -27,6 +27,7 @@ type Config struct {
 	DebugMode bool   `json:"debug_mode"` // 是否启用调试模式
 	AppName   string `json:"app_name"`   // 应用名称
 	AppPort   int    `json:"app_port"`   // 应用端口
+	GrpcPort  int    `json:"grpc_port"`  // grpc端口
 }
 
 var (

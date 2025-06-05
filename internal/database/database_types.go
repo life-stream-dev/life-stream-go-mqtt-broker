@@ -23,6 +23,7 @@ type WillMessage struct {
 }
 
 type SessionStore interface {
+	GetAllSession() []SessionData
 	GetSession(clientID string) *SessionData
 	SaveSession(session *SessionData) bool
 	DeleteSession(clientID string) bool

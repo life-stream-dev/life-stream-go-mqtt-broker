@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package grpc;
+
+option go_package = "./";
+
+message Empty{}
+
+message Devices{
+  string DevicesId = 1;
+}
+
+message AllDevicesResponse{
+  repeated Devices devices = 1;
+}
+
+message TargetDevice{
+  string DevicesId = 1;
+  bool status = 2;
+}
+
+message ExecuteResponse{
+  bool status = 1;
+}
+
+service Device{
+  rpc GetAllDevices(Empty) returns (AllDevicesResponse);
+  rpc SetDevicesState(TargetDevice) returns (ExecuteResponse);
+}
+
+
